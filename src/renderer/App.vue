@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useStore } from 'vuex'
 import { Close, Connection, DataAnalysis, Document, Files, FullScreen, Minus, Monitor, Setting } from '@element-plus/icons-vue'
 
+const store = useStore()
 const maximized = ref(false)
 const aboutVisible = ref(false)
 const navigation = [
-  { path: '/client', label: 'Client', icon: Connection },
-  { path: '/server', label: 'Server', icon: Monitor },
+  { path: '/client', label: '客户端（主站）', icon: Connection },
+  { path: '/server', label: '服务器（从站）', icon: Monitor },
   { path: '/dictionary', label: '寄存器字典', icon: DataAnalysis },
   { path: '/logs', label: '报文日志', icon: Document },
   { path: '/project', label: '工程管理', icon: Files }
@@ -15,6 +17,15 @@ const navigation = [
 async function minimizeWindow(): Promise<void> { await window.modbusApi?.window.minimize() }
 async function toggleMaximizeWindow(): Promise<void> { if (window.modbusApi) maximized.value = await window.modbusApi.window.toggleMaximize() }
 async function closeWindow(): Promise<void> { await window.modbusApi?.window.close() }
+
+/**
+ * @brief 在应用根节点全局注册从站事件监听。
+ *
+ * 监听挂在 App 生命周期内，切走从站页面后从站仍继续运行且事件继续被处理。
+ */
+onMounted(() => {
+  window.modbusApi?.server.onEvent((event) => store.dispatch('handleServerEvent', event))
+})
 </script>
 
 <template>

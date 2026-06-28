@@ -151,11 +151,11 @@ onMounted(() => store.dispatch('refreshRecentProjects'))
       <section class="panel configuration-cards">
         <h3>工程配置概览</h3>
         <div class="card-grid">
-          <article><strong>Client 连接</strong><span>{{ store.state.protocol }}</span><small>{{ store.state.protocol === 'RTU' ? `${store.state.connection.path} / ${store.state.connection.baudRate}` : `${store.state.tcp.host}:${store.state.tcp.port}` }}</small></article>
+          <article><strong>客户端（主站）</strong><span>{{ store.state.protocol }}</span><small>{{ store.state.protocol === 'RTU' ? `${store.state.connection.path} / ${store.state.connection.baudRate}` : `${store.state.tcp.host}:${store.state.tcp.port}` }}</small></article>
           <article><strong>轮询任务</strong><span>{{ store.state.client.functionCode === 3 ? '保持寄存器' : '输入寄存器' }}</span><small>地址 {{ store.state.client.startAddress }}，数量 {{ store.state.client.quantity }}</small></article>
           <article><strong>寄存器字典</strong><span>{{ store.state.dictionary.length }} 个点位</span><small>{{ store.state.dictionary.reduce((sum, item) => sum + item.length, 0) }} 个寄存器长度</small></article>
-          <article><strong>Server 配置</strong><span>{{ store.state.server.protocol }}</span><small>从机 {{ store.state.server.slaveId }} / 端口 {{ store.state.server.tcpPort }}</small></article>
-          <article><strong>报文日志</strong><span>{{ store.state.logs.length }} 条</span><small>最多保留 1000 条</small></article>
+          <article><strong>服务器（从站）</strong><span>{{ store.state.server.protocol }}</span><small>从站 {{ store.state.server.slaveId }} / 端口 {{ store.state.server.tcpPort }}</small></article>
+          <article><strong>报文日志</strong><span>{{ store.state.logs.length }} 条</span><small>最多保留 10000 条</small></article>
         </div>
       </section>
     </section>
