@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState } from '../store'
@@ -11,6 +11,9 @@ type EditableField = 'hex' | 'parsed'
 
 const store = useStore<RootState>()
 const editValues = reactive<Record<string, string>>({})
+const logPanelRef = ref<HTMLElement | null>(null)
+const logPanelHeight = ref(260)
+let dragging = false
 
 const rows = computed(() => store.state.dictionary.map((item) => {
   const values = store.state.client.dictionaryRegisters[String(item.address)] ?? []
@@ -127,6 +130,38 @@ function getRowClass({ row }: { row: typeof rows.value[number] }): string {
 function isCoilEditable(item: RegisterDefinition): boolean {
   return item.access !== 'R' && isCoilAddress(item.address)
 }
+
+/**
+ * @brief 开始拖拽报文窗口分隔条。
+ *
+ * 记录起始 Y 与起始高度，监听 document 鼠标移动/释放以调整高度。
+ */
+function startResize(event: MouseEvent): void {
+  event.preventDefault()
+  dragging = true
+  const startY = event.clientY
+  const startHeight = logPanelHeight.value
+  const container = logPanelRef.value?.parentElement
+  const maxHeight = container ? container.clientHeight * 0.7 : 600
+  const onMove = (e: MouseEvent): void => {
+    if (!dragging) return
+    const next = startHeight - (e.clientY - startY)
+    logPanelHeight.value = Math.min(Math.max(next, 120), maxHeight)
+  }
+  const onUp = (): void => {
+    dragging = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+onBeforeUnmount(() => { dragging = false })
 </script>
 
 <template>
@@ -134,7 +169,7 @@ function isCoilEditable(item: RegisterDefinition): boolean {
     <ConnectionPanel />
     <section class="content-column">
       <section class="panel dictionary-poll-toolbar">
-        <div><label>从机地址</label><el-input-number v-model="store.state.client.slaveId" :min="1" :max="247" controls-position="right" /></div>
+        <div><label>从站地址</label><el-input-number v-model="store.state.client.slaveId" :min="1" :max="247" controls-position="right" /></div>
         <div><label>循环周期</label><el-input-number :model-value="store.state.client.pollInterval" :min="100" :step="100" controls-position="right" @update:model-value="store.dispatch('setPollInterval', $event)" /><span class="input-unit">ms</span></div>
         <div><label>合并读取</label><el-switch :model-value="store.state.client.mergeRead" @update:model-value="store.commit('setMergeRead', $event)" size="small" /></div>
 
@@ -174,9 +209,10 @@ function isCoilEditable(item: RegisterDefinition): boolean {
           <el-table-column label="备注" min-width="180"><template #default="scope">{{ scope.row.item.remark }}</template></el-table-column>
         </el-table>
       </section>
-      <section class="panel compact-log">
+      <div class="panel-resizer" @mousedown="startResize"><span /></div>
+      <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
         <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
-        <el-table :data="store.state.logs.slice(0, 5)" height="160" size="small" empty-text="暂无通信报文"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
+        <el-table :data="store.state.logs" height="100%" size="small" empty-text="暂无通信报文"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
       </section>
     </section>
   </div>
