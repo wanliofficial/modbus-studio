@@ -62,7 +62,12 @@ button, input { font-family: inherit; }
 .full-height { height: 100%; }
 .panel-title { display: flex; justify-content: space-between; align-items: center; height: 32px; }
 .panel-title h3 { margin: 0; }
-.panel-title span { color: #8490a2; font-size: 12px; }
+.panel-title span { color: #8490a2; font-size: 12px; flex: 1; margin: 0 12px; }
+.log-toggle { flex: 0 0 auto; }
+.group-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; }
+.group-tab { flex: 0 0 auto; padding: 5px 14px; font-size: 12px; color: #5d687a; background: #f5f7fa; border: 1px solid #e0e6ef; border-radius: 14px; cursor: pointer; white-space: nowrap; transition: all .15s; }
+.group-tab:hover { color: #2878eb; border-color: #a9c9f7; }
+.group-tab.active { color: #fff; background: linear-gradient(#287cf2, #337ff0); border-color: #287cf2; }
 .compact-log { padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
 .compact-log .el-table { flex: 1; min-height: 0; }
 .panel-resizer { height: 6px; display: flex; align-items: center; justify-content: center; cursor: row-resize; }
@@ -85,6 +90,9 @@ button, input { font-family: inherit; }
 .server-workspace .register-panel { padding-top: 5px; }
 .server-list-panel { padding: 14px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
 .server-list-panel .panel-title { margin-bottom: 4px; }
+.add-server-button { padding: 5px 12px; font-size: 12px; color: #4a5668; background: #f3f5f9; border: 1px solid #d8dee8; border-radius: 5px; cursor: pointer; transition: all .15s; }
+.add-server-button:hover { color: #2878eb; border-color: #a9c9f7; background: #eef4ff; }
+.server-point-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
 .server-list-panel .empty-tip { color: #8994a5; font-size: 12px; padding: 20px 4px; text-align: center; }
 .server-item { display: flex; gap: 8px; padding: 10px; border: 1px solid #e4e9f1; border-radius: 6px; background: #f8faff; cursor: pointer; transition: border-color .15s, background .15s; }
 .server-item:hover { border-color: #a9c9f7; background: #f2f7ff; }

@@ -17,6 +17,7 @@ export interface ServerRuntimeInstance {
   running: boolean
   requestCount: number
   dictionaryRegisters: Record<string, number[]>
+  points: RegisterDefinition[]
 }
 
 export interface RootState {
@@ -195,6 +196,30 @@ const store = createStore<RootState>({
       const target = state.servers.find((item) => item.id === id)
       if (target) target.requestCount += 1
     },
+    addServerPoint(state, payload: { id: string; point: RegisterDefinition }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) { target.points.push(payload.point); state.project.dirty = true }
+    },
+    updateServerPoint(state, payload: { id: string; index: number; point: RegisterDefinition }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) { target.points.splice(payload.index, 1, payload.point); state.project.dirty = true }
+    },
+    removeServerPoint(state, payload: { id: string; index: number }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) {
+        const removed = target.points.splice(payload.index, 1)[0]
+        if (removed) {
+          const next = { ...target.dictionaryRegisters }
+          delete next[String(removed.address)]
+          target.dictionaryRegisters = next
+        }
+        state.project.dirty = true
+      }
+    },
+    setServerPoints(state, payload: { id: string; points: RegisterDefinition[] }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) { target.points = payload.points; target.dictionaryRegisters = {}; state.project.dirty = true }
+    },
     addLog(state, item: Omit<PacketLogItem, 'id'>) {
       if (item.direction === 'TX') state.txCount += 1
       else if (item.direction === 'RX') state.rxCount += 1
@@ -246,7 +271,8 @@ const store = createStore<RootState>({
         protocol: instance.protocol,
         running: false,
         requestCount: legacyData?.requestCount ?? 0,
-        dictionaryRegisters: legacyData?.dictionaryRegisters ?? {}
+        dictionaryRegisters: legacyData?.dictionaryRegisters ?? {},
+        points: (instance.points ?? []).map((p) => ({ ...p }))
       } as ServerRuntimeInstance))
       serverIdSequence = state.servers.reduce((max, item) => Math.max(max, Number(item.id.replace(/^srv-/, '')) || 0), 0) + 1
       state.logs = payload.data.packetLogs?.map((item) => ({ ...item })) ?? []
@@ -539,7 +565,8 @@ const store = createStore<RootState>({
         protocol: state.server.protocol,
         running: false,
         requestCount: 0,
-        dictionaryRegisters: {}
+        dictionaryRegisters: {},
+        points: []
       })
     },
     /**
@@ -555,14 +582,14 @@ const store = createStore<RootState>({
         commit('updateServerInstance', { id, patch: { running: false } })
         return
       }
-      const data: ServerDataUpdate[] = state.dictionary.flatMap((item) => {
+      const data: ServerDataUpdate[] = instance.points.flatMap((item) => {
         const addressInfo = resolveRegisterAddress(item.address)
         if (!addressInfo) return []
         const stored = instance.dictionaryRegisters[String(item.address)]
         const values = stored ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
         return values.map((value, index) => ({ area: addressInfo.area, address: addressInfo.protocolAddress + index, value }))
       })
-      await window.modbusApi.server.startInstance({ id: instance.id, name: instance.name, slaveId: instance.slaveId, tcpHost: instance.tcpHost, tcpPort: instance.tcpPort, protocol: instance.protocol }, data)
+      await window.modbusApi.server.startInstance({ id: instance.id, name: instance.name, slaveId: instance.slaveId, tcpHost: instance.tcpHost, tcpPort: instance.tcpPort, protocol: instance.protocol, points: instance.points.map((p) => ({ ...p })) }, data)
       commit('updateServerInstance', { id, patch: { running: true } })
     },
     /**
@@ -583,19 +610,18 @@ const store = createStore<RootState>({
       if (event.type === 'status') commit('updateServerInstance', { id: event.instanceId, patch: { running: Boolean(event.running) } })
       if (event.type === 'data' && event.update) {
         const update = event.update
-        const item = state.dictionary.find((candidate) => {
+        const instance = state.servers.find((s) => s.id === event.instanceId)
+        if (!instance) return
+        const item = instance.points.find((candidate) => {
           const info = resolveRegisterAddress(candidate.address)
           return info?.area === update.area && update.address >= info.protocolAddress && update.address < info.protocolAddress + Math.max(1, candidate.length)
         })
         if (item) {
           const info = resolveRegisterAddress(item.address)
           if (info) {
-            const instance = state.servers.find((s) => s.id === event.instanceId)
-            if (instance) {
-              const values = instance.dictionaryRegisters[String(item.address)] ? [...instance.dictionaryRegisters[String(item.address)]] : Array.from({ length: Math.max(1, item.length) }, () => 0)
-              values[update.address - info.protocolAddress] = update.value
-              commit('setServerInstanceDictionaryRegisters', { id: event.instanceId, key: String(item.address), values })
-            }
+            const values = instance.dictionaryRegisters[String(item.address)] ? [...instance.dictionaryRegisters[String(item.address)]] : Array.from({ length: Math.max(1, item.length) }, () => 0)
+            values[update.address - info.protocolAddress] = update.value
+            commit('setServerInstanceDictionaryRegisters', { id: event.instanceId, key: String(item.address), values })
           }
         }
       }
@@ -638,14 +664,15 @@ const store = createStore<RootState>({
           slaveId: instance.slaveId,
           tcpHost: instance.tcpHost,
           tcpPort: instance.tcpPort,
-          protocol: instance.protocol
+          protocol: instance.protocol,
+          points: instance.points.map((p) => ({ ...p }))
         })),
         clientData: {
           dictionaryRegisters: Object.fromEntries(Object.entries(state.client.dictionaryRegisters).map(([key, values]) => [key, [...values]])),
           lastElapsedMs: state.client.lastElapsedMs
         },
         serverData: {
-          dictionaryRegisters: Object.fromEntries(state.dictionary.map((item) => {
+          dictionaryRegisters: Object.fromEntries((state.servers[0]?.points ?? state.dictionary).map((item) => {
             const primary = state.servers[0]
             const values = primary?.dictionaryRegisters[String(item.address)] ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
             return [String(item.address), [...values]]

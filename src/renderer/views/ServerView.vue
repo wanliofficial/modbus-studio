@@ -4,7 +4,7 @@ import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState, ServerRuntimeInstance } from '../store'
 import type { RegisterDefinition, ServerAreaName } from '../../shared/types'
-import { decodeRegisterValue, encodeRegisterValue, formatRegisterHex, resolveRegisterAddress } from '../utils/register-data'
+import { decodeRegisterValue, encodeRegisterValue, formatRegisterHex, getDefaultLengthForType, resolveRegisterAddress } from '../utils/register-data'
 
 type EditableField = 'hex' | 'parsed'
 
@@ -14,6 +14,13 @@ const selectedId = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const draftVisible = ref(false)
 const draft = reactive({ name: '', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502, protocol: 'TCP' as 'RTU' | 'TCP' })
+const pointDialogVisible = ref(false)
+const pointDraft = reactive<RegisterDefinition>(createEmptyPoint())
+const pointEditIndex = ref(-1)
+
+function createEmptyPoint(): RegisterDefinition {
+  return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'RW', factor: 1, unit: '无', remark: '' }
+}
 
 const selected = computed<ServerRuntimeInstance | null>(() => {
   if (selectedId.value) return store.state.servers.find((item) => item.id === selectedId.value) ?? null
@@ -23,19 +30,19 @@ const selected = computed<ServerRuntimeInstance | null>(() => {
 const activeRows = computed(() => {
   const instance = selected.value
   if (!instance) return []
-  return store.state.dictionary.flatMap((item) => {
+  return instance.points.flatMap((item, index) => {
     const addressInfo = resolveRegisterAddress(item.address)
     if (!addressInfo || addressInfo.area !== activeArea.value) return []
     const values = getServerValues(instance, item)
-    return [{ item, addressInfo, values, hex: formatRegisterHex(values), parsed: decodeRegisterValue(item, values) }]
+    return [{ item, index, addressInfo, values, hex: formatRegisterHex(values), parsed: decodeRegisterValue(item, values) }]
   })
 })
 const isBitArea = computed(() => activeArea.value === 'coil' || activeArea.value === 'discrete')
 
 /**
- * @brief 获取某从站实例字典项当前原始值。
+ * @brief 获取某从站点当前原始值。
  *
- * 优先返回已保存值，首次使用时按字典长度生成零值数组。
+ * 优先返回已保存值，首次使用时按点长度生成零值数组。
  */
 function getServerValues(instance: ServerRuntimeInstance, item: RegisterDefinition): number[] {
   const stored = instance.dictionaryRegisters[String(item.address)]
@@ -43,23 +50,14 @@ function getServerValues(instance: ServerRuntimeInstance, item: RegisterDefiniti
   return Array.from({ length: Math.max(1, item.length) }, () => 0)
 }
 
-/**
- * @brief 获取 Server 单元格当前显示文本。
- */
 function getCellValue(row: typeof activeRows.value[number], field: EditableField): string {
   return editValues[`${row.item.address}:${field}`] ?? row[field]
 }
 
-/**
- * @brief 更新 Server 单元格编辑缓存。
- */
 function updateCellValue(item: RegisterDefinition, field: EditableField, value: string): void {
   editValues[`${item.address}:${field}`] = value
 }
 
-/**
- * @brief 将十六进制文本编码为原始值。
- */
 function encodeHex(item: RegisterDefinition, text: string): number[] {
   const compact = text.replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '')
   if (!compact || compact.length % 4 !== 0) throw new Error('HEX 值应按每个寄存器四位十六进制输入')
@@ -69,7 +67,7 @@ function encodeHex(item: RegisterDefinition, text: string): number[] {
 }
 
 /**
- * @brief 提交 Server 字典项编辑值。
+ * @brief 提交点编辑值。
  *
  * 保存到对应从站实例，并在服务运行时同步到主进程数据区。
  */
@@ -80,9 +78,9 @@ async function commitCell(item: RegisterDefinition, field: EditableField): Promi
   if (!(key in editValues)) return
   try {
     const addressInfo = resolveRegisterAddress(item.address)
-    if (!addressInfo) throw new Error('字典地址不属于有效 Modbus 数据区')
+    if (!addressInfo) throw new Error('点地址不属于有效 Modbus 数据区')
     const values = field === 'hex' ? encodeHex(item, editValues[key]) : encodeRegisterValue(item, editValues[key])
-    if (values.length !== Math.max(1, item.length)) throw new Error(`数据类型需要 ${values.length} 个值，但字典长度配置为 ${item.length}`)
+    if (values.length !== Math.max(1, item.length)) throw new Error(`数据类型需要 ${values.length} 个值，但点长度配置为 ${item.length}`)
     store.commit('setServerInstanceDictionaryRegisters', { id: instance.id, key: String(item.address), values })
     if (instance.running) {
       await Promise.all(values.map((value, index) => window.modbusApi.server.updateInstanceData(instance.id, { area: addressInfo.area, address: addressInfo.protocolAddress + index, value })))
@@ -93,9 +91,6 @@ async function commitCell(item: RegisterDefinition, field: EditableField): Promi
   }
 }
 
-/**
- * @brief 更新位数据区的开关值。
- */
 async function updateBitValue(item: RegisterDefinition, value: string | number | boolean): Promise<void> {
   const instance = selected.value
   if (!instance) return
@@ -106,17 +101,12 @@ async function updateBitValue(item: RegisterDefinition, value: string | number |
   if (instance.running) await window.modbusApi.server.updateInstanceData(instance.id, { area: addressInfo.area, address: addressInfo.protocolAddress, value: values[0] })
 }
 
-/**
- * @brief 打开新增从站对话框。
- */
+/* ---- 从站实例管理 ---- */
 function openCreateDialog(): void {
   Object.assign(draft, { name: `从站 ${store.state.servers.length + 1}`, slaveId: store.state.server.slaveId, tcpHost: store.state.server.tcpHost, tcpPort: store.state.server.tcpPort + store.state.servers.length, protocol: store.state.server.protocol })
   draftVisible.value = true
 }
 
-/**
- * @brief 保存新增从站。
- */
 function saveInstance(): void {
   if (!draft.name.trim()) { ElMessage.warning('请输入从站名称'); return }
   const id = 'srv-' + Date.now()
@@ -129,31 +119,83 @@ function saveInstance(): void {
     protocol: draft.protocol,
     running: false,
     requestCount: 0,
-    dictionaryRegisters: {}
+    dictionaryRegisters: {},
+    points: []
   })
   selectedId.value = id
   draftVisible.value = false
   ElMessage.success('从站已添加')
 }
 
-/**
- * @brief 切换指定从站启停状态。
- */
 async function toggleInstance(id: string): Promise<void> {
+  try { await store.dispatch('toggleServerInstance', id) }
+  catch (error) { ElMessage.error((error as Error).message) }
+}
+
+async function removeInstance(id: string): Promise<void> {
   try {
-    await store.dispatch('toggleServerInstance', id)
+    await store.dispatch('removeServerInstance', id)
+    if (selectedId.value === id) selectedId.value = null
+  } catch (error) { ElMessage.error((error as Error).message) }
+}
+
+/* ---- 点表管理 ---- */
+function openCreatePointDialog(): void {
+  if (!selected.value) return
+  pointEditIndex.value = -1
+  Object.assign(pointDraft, createEmptyPoint())
+  pointDialogVisible.value = true
+}
+
+function openEditPointDialog(item: RegisterDefinition, index: number): void {
+  pointEditIndex.value = index
+  Object.assign(pointDraft, item)
+  pointDialogVisible.value = true
+}
+
+function onPointDataTypeChange(type: string): void {
+  pointDraft.length = getDefaultLengthForType(type)
+}
+
+function savePoint(): void {
+  const instance = selected.value
+  if (!instance) return
+  if (!pointDraft.name.trim()) { ElMessage.warning('请输入点名称'); return }
+  const point = { ...pointDraft, name: pointDraft.name.trim(), group: pointDraft.group.trim() || '默认分组', unit: pointDraft.unit.trim() || '无' }
+  if (pointEditIndex.value >= 0) store.commit('updateServerPoint', { id: instance.id, index: pointEditIndex.value, point })
+  else store.commit('addServerPoint', { id: instance.id, point })
+  pointDialogVisible.value = false
+  ElMessage.success(pointEditIndex.value >= 0 ? '点已更新' : '点已添加')
+}
+
+function removePoint(index: number): void {
+  const instance = selected.value
+  if (!instance) return
+  store.commit('removeServerPoint', { id: instance.id, index })
+}
+
+async function handleImportPoints(): Promise<void> {
+  const instance = selected.value
+  if (!instance) return
+  if (!window.modbusApi) { ElMessage.warning('导入功能仅在桌面端可用'); return }
+  try {
+    const items = await window.modbusApi.dictionary.import()
+    if (!items || items.length === 0) return
+    store.commit('setServerPoints', { id: instance.id, points: items })
+    ElMessage.success(`已导入 ${items.length} 个点`)
   } catch (error) {
     ElMessage.error((error as Error).message)
   }
 }
 
-/**
- * @brief 删除指定从站。
- */
-async function removeInstance(id: string): Promise<void> {
+async function handleExportPoints(): Promise<void> {
+  const instance = selected.value
+  if (!instance) return
+  if (!window.modbusApi) { ElMessage.warning('导出功能仅在桌面端可用'); return }
+  if (instance.points.length === 0) { ElMessage.warning('点表为空，无数据可导出'); return }
   try {
-    await store.dispatch('removeServerInstance', id)
-    if (selectedId.value === id) selectedId.value = null
+    const path = await window.modbusApi.dictionary.export(instance.points.map((item) => ({ ...item })))
+    if (path) ElMessage.success('从站点表已导出')
   } catch (error) {
     ElMessage.error((error as Error).message)
   }
@@ -164,7 +206,10 @@ async function removeInstance(id: string): Promise<void> {
   <div class="workspace server-workspace">
     <aside class="side-column">
       <section class="panel server-list-panel">
-        <div class="panel-title"><h3>从站列表</h3><el-button size="small" type="primary" @click="openCreateDialog">新增从站</el-button></div>
+        <div class="panel-title">
+          <h3>从站列表</h3>
+          <button class="add-server-button" @click="openCreateDialog">+ 新增从站</button>
+        </div>
         <div v-if="store.state.servers.length === 0" class="empty-tip">暂无从站，点击「新增从站」创建</div>
         <div
           v-for="instance in store.state.servers"
@@ -192,11 +237,22 @@ async function removeInstance(id: string): Promise<void> {
       <section class="panel register-panel full-height">
         <div v-if="!selected" class="empty-tip full-empty">请选择或创建一个从站</div>
         <template v-else>
-          <div class="panel-title"><h3>{{ selected.name }} - 数据区</h3><span>从站地址 {{ selected.slaveId }} · {{ selected.running ? '运行中' : '已停止' }}</span></div>
+          <div class="panel-title">
+            <h3>{{ selected.name }} - 数据区</h3>
+            <span>从站地址 {{ selected.slaveId }} · {{ selected.running ? '运行中' : '已停止' }}</span>
+          </div>
+          <div class="server-point-toolbar">
+            <el-button size="small" @click="openCreatePointDialog">新增点</el-button>
+            <el-button size="small" @click="handleImportPoints">导入点表</el-button>
+            <el-button size="small" @click="handleExportPoints">导出点表</el-button>
+          </div>
           <el-tabs v-model="activeArea">
-            <el-tab-pane label="线圈 (0xxxx)" name="coil" /><el-tab-pane label="离散输入 (1xxxx)" name="discrete" /><el-tab-pane label="输入寄存器 (3xxxx)" name="input" /><el-tab-pane label="保持寄存器 (4xxxx)" name="holding" />
+            <el-tab-pane label="线圈 (0xxxx)" name="coil" />
+            <el-tab-pane label="离散输入 (1xxxx)" name="discrete" />
+            <el-tab-pane label="输入寄存器 (3xxxx)" name="input" />
+            <el-tab-pane label="保持寄存器 (4xxxx)" name="holding" />
           </el-tabs>
-          <el-table :data="activeRows" height="calc(100% - 95px)" stripe empty-text="寄存器字典中没有该数据区的地址">
+          <el-table :data="activeRows" height="calc(100% - 145px)" stripe empty-text="该数据区暂无点，请点击「新增点」">
             <el-table-column label="地址" width="100"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
             <el-table-column label="名称" min-width="150"><template #default="scope"><strong>{{ scope.row.item.name }}</strong><small class="cell-meta">{{ scope.row.item.dataType }} / 长度 {{ scope.row.item.length }}</small></template></el-table-column>
             <el-table-column v-if="isBitArea" label="当前状态" min-width="150"><template #default="scope"><el-switch :model-value="Boolean(scope.row.values[0])" @change="updateBitValue(scope.row.item, $event)" /></template></el-table-column>
@@ -205,6 +261,12 @@ async function removeInstance(id: string): Promise<void> {
             <el-table-column label="倍率/单位" min-width="125"><template #default="scope">×{{ scope.row.item.factor }} {{ scope.row.item.unit }}</template></el-table-column>
             <el-table-column label="权限" width="80"><template #default="scope"><el-tag :type="scope.row.item.access === 'R' ? 'info' : 'success'">{{ scope.row.item.access }}</el-tag></template></el-table-column>
             <el-table-column label="备注" min-width="180"><template #default="scope">{{ scope.row.item.remark }}</template></el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="scope">
+                <el-button link type="primary" @click="openEditPointDialog(scope.row.item, scope.row.index)">编辑</el-button>
+                <el-button link type="danger" @click="removePoint(scope.row.index)">删除</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </template>
       </section>
@@ -219,6 +281,23 @@ async function removeInstance(id: string): Promise<void> {
         <el-form-item label="监听端口"><el-input-number v-model="draft.tcpPort" :min="1" :max="65535" controls-position="right" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="draftVisible = false">取消</el-button><el-button type="primary" @click="saveInstance">保存</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="pointDialogVisible" :title="pointEditIndex >= 0 ? '编辑点' : '新增点'" width="620px">
+      <el-form label-width="90px" class="dictionary-form">
+        <div class="dictionary-form-grid">
+          <el-form-item label="分组"><el-input v-model="pointDraft.group" placeholder="例如：温度传感器" /></el-form-item>
+          <el-form-item label="名称"><el-input v-model="pointDraft.name" placeholder="请输入点名称" /></el-form-item>
+          <el-form-item label="地址"><el-input-number v-model="pointDraft.address" :min="0" :max="65535" controls-position="right" /></el-form-item>
+          <el-form-item label="数据类型"><el-select v-model="pointDraft.dataType" @change="onPointDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+          <el-form-item label="长度"><el-input-number v-model="pointDraft.length" :min="1" :max="125" controls-position="right" /></el-form-item>
+          <el-form-item label="读写权限"><el-select v-model="pointDraft.access"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></el-form-item>
+          <el-form-item label="比例因子"><el-input-number v-model="pointDraft.factor" :precision="4" :step="0.1" controls-position="right" /></el-form-item>
+          <el-form-item label="单位"><el-input v-model="pointDraft.unit" placeholder="例如：°C、kPa、%" /></el-form-item>
+        </div>
+        <el-form-item label="备注"><el-input v-model="pointDraft.remark" type="textarea" :rows="3" placeholder="填写点位用途、取值范围或调试说明" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="pointDialogVisible = false">取消</el-button><el-button type="primary" @click="savePoint">保存</el-button></template>
     </el-dialog>
   </div>
 </template>

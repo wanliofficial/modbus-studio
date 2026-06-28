@@ -67,6 +67,7 @@ export interface ServerInstanceConfig {
   tcpHost: string
   tcpPort: number
   protocol: ProtocolMode
+  points?: RegisterDefinition[]
 }
 
 export interface ServerDataUpdate {
