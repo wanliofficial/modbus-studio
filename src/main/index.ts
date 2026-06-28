@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
-import type { PacketLogItem, ProjectData, ReadRegistersParams, RecentProject, RegisterDefinition, SerialConfig, ServerConfig, ServerDataUpdate, ServerEvent, TcpConfig, WriteMultipleRegistersParams, WriteRegisterParams } from '../shared/types'
+import * as iconv from 'iconv-lite'
+import type { PacketLogItem, ProjectData, ReadRegistersParams, RecentProject, RegisterDefinition, SerialConfig, ServerConfig, ServerDataUpdate, ServerEvent, ServerInstanceConfig, TcpConfig, WriteMultipleRegistersParams, WriteRegisterParams } from '../shared/types'
 import { SerialService } from './services/SerialService'
 import { ModbusClientService } from './services/ModbusClientService'
 import { TcpClientService } from './services/TcpClientService'
@@ -50,6 +51,20 @@ async function addRecentProject(path: string, name: string): Promise<RecentProje
   const projects = [{ path, name, openedAt: new Date().toISOString() }, ...current.filter((item) => item.path !== path)].slice(0, 10)
   await writeFile(getRecentProjectsPath(), JSON.stringify(projects, null, 2), 'utf8')
   return projects
+}
+
+/**
+ * @brief 解码 CSV 文件缓冲区。
+ *
+ * 先尝试 UTF-8 解码；若结果包含替换字符（U+FFFD，说明不是合法 UTF-8），
+ * 则按 GBK 解码兜底，兼容 WPS/Excel 默认以 GBK/ANSI 保存的 CSV。
+ * @param buffer 文件原始字节。
+ * @returns 解码后的文本。
+ */
+function decodeCsvBuffer(buffer: Buffer): string {
+  const utf8 = iconv.decode(buffer, 'utf8')
+  if (!utf8.includes('\uFFFD')) return utf8
+  return iconv.decode(buffer, 'gbk')
 }
 
 /**
@@ -115,9 +130,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle('client:read-registers', (_event, params: ReadRegistersParams) => params.protocol === 'TCP' ? tcpClientService.readRegisters(params) : clientService.readRegisters(params))
   ipcMain.handle('client:write-single', (_event, params: WriteRegisterParams) => params.protocol === 'TCP' ? tcpClientService.writeSingleRegister(params) : clientService.writeSingleRegister(params))
   ipcMain.handle('client:write-multiple', (_event, params: WriteMultipleRegistersParams) => params.protocol === 'TCP' ? tcpClientService.writeMultipleRegisters(params) : clientService.writeMultipleRegisters(params))
-  ipcMain.handle('server:start', (_event, config: ServerConfig, data: ServerDataUpdate[]) => serverService.start(config, data))
-  ipcMain.handle('server:stop', () => serverService.stop())
-  ipcMain.handle('server:update-data', (_event, update: ServerDataUpdate) => serverService.updateData(update))
+  ipcMain.handle('server:start-instance', (_event, instance: ServerInstanceConfig, data: ServerDataUpdate[]) => serverService.startInstance(instance, data))
+  ipcMain.handle('server:stop-instance', (_event, id: string) => serverService.stopInstance(id))
+  ipcMain.handle('server:update-instance-data', (_event, id: string, update: ServerDataUpdate) => serverService.updateInstanceData(id, update))
   ipcMain.handle('project:open', async () => {
     const selected = await dialog.showOpenDialog({
       title: '打开 Modbus Studio 工程',
@@ -162,7 +177,7 @@ function registerIpcHandlers(): void {
     if (selected.canceled || !selected.filePath) return null
     const isCsv = selected.filePath.endsWith('.csv')
     const content = isCsv
-      ? '﻿分组,地址,名称,数据类型,长度,读写,比例因子,单位,备注\n' + items.map((item) => `"${item.group}","${item.address}","${item.name}","${item.dataType}","${item.length}","${item.access}","${item.factor}","${item.unit}","${item.remark}"`).join('\n')
+      ? '﻿分组,地址,名称,数据类型,长度,从站,读写,比例因子,单位,备注\n' + items.map((item) => `"${item.group}","${item.address}","${item.name}","${item.dataType}","${item.length}","${item.slaveId ?? 0}","${item.access}","${item.factor}","${item.unit}","${item.remark}"`).join('\n')
       : JSON.stringify(items, null, 2)
     await writeFile(selected.filePath, content, 'utf8')
     return selected.filePath
@@ -179,26 +194,33 @@ function registerIpcHandlers(): void {
     })
     if (selected.canceled || selected.filePaths.length === 0) return null
     const filePath = selected.filePaths[0]
-    const content = await readFile(filePath, 'utf8')
     if (filePath.endsWith('.csv')) {
-      const lines = content.replace(/^﻿/, '').split('\n').filter((line) => line.trim())
+      const buffer = await readFile(filePath)
+      let text = decodeCsvBuffer(buffer)
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1) // 去掉 UTF-8 BOM
+      const lines = text.split('\n').filter((line) => line.trim())
       if (lines.length < 2) return []
+      const hasSlaveColumn = lines[0].includes('从站')
       return lines.slice(1).map((line) => {
         const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) ?? line.split(',')
         const val = (index: number): string => (parts[index] ?? '').replace(/^"|"$/g, '').trim()
+        const offset = hasSlaveColumn ? 1 : 0
+        const slaveRaw = hasSlaveColumn ? Number(val(5)) : 0
         return {
           group: val(0) || '默认分组',
           address: Number(val(1)) || 40001,
           name: val(2) || '',
           dataType: val(3) || 'UINT16',
           length: Number(val(4)) || 1,
-          access: (val(5) as 'R' | 'W' | 'RW') || 'R',
-          factor: Number(val(6)) || 1,
-          unit: val(7) || '无',
-          remark: val(8) || ''
+          slaveId: slaveRaw > 0 ? slaveRaw : undefined,
+          access: (val(5 + offset) as 'R' | 'W' | 'RW') || 'R',
+          factor: Number(val(6 + offset)) || 1,
+          unit: val(7 + offset) || '无',
+          remark: val(8 + offset) || ''
         } as RegisterDefinition
       })
     }
+    const content = await readFile(filePath, 'utf8')
     return JSON.parse(content) as RegisterDefinition[]
   })
   ipcMain.handle('log:export', async (_event, items: PacketLogItem[]) => {
@@ -234,6 +256,6 @@ serverService.on('server-event', (event: ServerEvent) => {
 app.on('window-all-closed', () => {
   void serialService.close()
   void tcpClientService.disconnect()
-  void serverService.stop()
+  void serverService.stopAll()
   if (process.platform !== 'darwin') app.quit()
 })
