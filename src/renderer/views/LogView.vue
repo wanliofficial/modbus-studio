@@ -9,9 +9,9 @@ const store = useStore<RootState>()
 const filterDirection = ref<'全部' | 'TX' | 'RX'>('全部')
 const filterProtocol = ref<'全部' | 'RTU' | 'TCP'>('全部')
 const filterAddressRange = ref<'全部' | 'coil' | 'discrete' | 'input' | 'holding'>('全部')
-const currentPage = ref(1)
-const pageSize = ref(100)
-const autoLatest = ref(true)
+/** @brief 当前已渲染的条数，滚动接近底部时递增，实现动态加载更多历史。 */
+const renderCount = ref(100)
+const BATCH = 100
 
 const addressRangeLabels: Record<string, string> = {
   coil: '线圈 0xxxx (00001-09999)',
@@ -56,25 +56,36 @@ const filteredLogs = computed(() => {
   })
 })
 
-/** @brief 当前页数据，避免一次渲染上万行导致卡顿。 */
-const pagedLogs = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredLogs.value.slice(start, start + pageSize.value)
-})
+/**
+ * @brief 当前实际渲染的日志切片。
+ *
+ * 日志按最新在前倒序排列；仅渲染前 renderCount 条，避免一次渲染上万行。
+ */
+const visibleLogs = computed(() => filteredLogs.value.slice(0, renderCount.value))
+const hasMore = computed(() => renderCount.value < filteredLogs.value.length)
 
 /**
- * @brief 新报文到达时自动回到第一页（日志为最新在前的倒序）。
+ * @brief 表格滚动时按需加载更多历史日志。
  *
- * logs 按 unshift 倒序插入，新报文在第 1 页；若用户手动翻到其它页查看历史，
- * 自动跳转会打断浏览，故仅在 autoLatest 开启时生效。
+ * 日志最新在前，滚动条接近底部时说明用户想看更早的历史，遂追加一批渲染。
+ * @param param0 el-table 滚动事件负载。
  */
-watch(() => store.state.logs.length, () => {
-  if (autoLatest.value) currentPage.value = 1
-})
+function handleScroll({ scrollTop, scrollLeft }: { scrollTop: number; scrollLeft: number }): void {
+  void scrollLeft
+  const wrapper = document.querySelector('.log-table .el-table__body-wrapper') as HTMLElement | null
+  if (!wrapper) return
+  const distanceToBottom = wrapper.scrollHeight - wrapper.clientHeight - scrollTop
+  if (distanceToBottom < 200 && hasMore.value) {
+    renderCount.value += BATCH
+  }
+}
 
-/** @brief 切换过滤条件时重置到第一页。 */
-watch([filterDirection, filterProtocol, filterAddressRange, pageSize], () => {
-  currentPage.value = 1
+/** @brief 切换过滤条件或日志总量减少时，重置渲染计数。 */
+watch([filterDirection, filterProtocol, filterAddressRange], () => {
+  renderCount.value = 100
+})
+watch(() => filteredLogs.value.length, (length) => {
+  if (length < renderCount.value) renderCount.value = Math.max(BATCH, length)
 })
 
 async function handleExport(): Promise<void> {
@@ -110,16 +121,16 @@ async function handleExport(): Promise<void> {
         <el-option :label="addressRangeLabels.holding" value="holding" />
       </el-select>
       <span class="toolbar-spacer" />
-      <span class="toolbar-tip" style="margin-right: 16px">保留最近 10000 条，新报文自动刷新</span>
+      <span class="toolbar-tip" style="margin-right: 16px">显示 {{ visibleLogs.length }} / {{ filteredLogs.length }} / {{ store.state.logs.length }} 条（最新在前，向下滚动加载更多）</span>
       <el-button @click="handleExport">导出日志</el-button>
       <el-button @click="store.commit('clearLogs')">清空日志</el-button>
     </section>
     <section class="panel page-table">
       <div class="panel-title">
         <h3>报文日志</h3>
-        <span>显示 {{ pagedLogs.length }} / {{ filteredLogs.length }} / {{ store.state.logs.length }} 条（当前/过滤后/总数）</span>
+        <span>{{ hasMore ? '向下滚动加载更早报文' : '已加载全部' }}</span>
       </div>
-      <el-table :data="pagedLogs" height="calc(100% - 56px)" stripe class="log-table" empty-text="暂无通信报文">
+      <el-table :data="visibleLogs" height="100%" stripe class="log-table" empty-text="暂无通信报文" @scroll="handleScroll">
         <el-table-column prop="id" label="#" width="60" />
         <el-table-column prop="time" label="时间" width="110" />
         <el-table-column prop="direction" label="方向" width="80">
@@ -133,18 +144,6 @@ async function handleExport(): Promise<void> {
         <el-table-column prop="elapsedMs" label="耗时(ms)" width="90" />
         <el-table-column prop="status" label="状态" width="80" />
       </el-table>
-      <div class="log-pagination">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[50, 100, 200, 500]"
-          :total="filteredLogs.length"
-          layout="total, sizes, prev, pager, next, jumper"
-          small
-          background
-        />
-        <el-checkbox v-model="autoLatest" class="auto-latest">新报文自动跳到第一页</el-checkbox>
-      </div>
     </section>
   </div>
 </template>
