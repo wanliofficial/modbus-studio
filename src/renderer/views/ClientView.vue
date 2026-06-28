@@ -17,8 +17,27 @@ const logPanelVisible = ref(true)
 const activeGroup = ref('全部')
 let dragging = false
 
-/** @brief 报文窗口仅渲染最近若干条，避免日志量大时拖慢渲染。 */
-const recentLogs = computed(() => store.state.logs.slice(0, 500))
+/** @brief 报文窗口动态渲染条数，滚动接近底部时追加，避免切换页面卡顿。 */
+const logRenderCount = ref(80)
+/**
+ * @brief 报文窗口仅渲染最近若干条，滚动到底部再追加。
+ *
+ * 窗口空间有限，初始只渲染最近 80 条；窗口本身高度只够显示约 10 行，
+ * 全量渲染无意义且拖慢切换页面。
+ */
+const recentLogs = computed(() => store.state.logs.slice(0, logRenderCount.value))
+const hasMoreLogs = computed(() => logRenderCount.value < store.state.logs.length)
+
+/**
+ * @brief 报文窗口滚动接近底部时追加渲染历史报文。
+ */
+function handleLogScroll({ scrollTop }: { scrollTop: number }): void {
+  const wrapper = document.querySelector('.compact-log .el-table__body-wrapper') as HTMLElement | null
+  if (!wrapper) return
+  if (wrapper.scrollHeight - wrapper.clientHeight - scrollTop < 150 && hasMoreLogs.value) {
+    logRenderCount.value += 80
+  }
+}
 
 const groups = computed(() => {
   const set = new Set<string>()
@@ -233,7 +252,7 @@ onBeforeUnmount(() => { dragging = false })
         <div class="panel-resizer" @mousedown="startResize"><span /></div>
         <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
           <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
-          <el-table :data="recentLogs" height="100%" size="small" empty-text="暂无通信报文（仅显示最近 500 条，完整日志见报文日志页）"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
+          <el-table :data="recentLogs" height="100%" size="small" empty-text="暂无通信报文（最新在前，向下滚动加载更早报文）" @scroll="handleLogScroll"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
         </section>
       </template>
     </section>
