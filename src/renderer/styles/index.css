@@ -99,6 +99,8 @@ button, input { font-family: inherit; }
 .dictionary-form-grid .el-input-number, .dictionary-form-grid .el-select { width: 100%; }
 .toolbar-spacer { flex: 1; }
 .page-table { min-height: 0; flex: 1; padding: 12px; overflow: hidden; }
+.log-pagination { display: flex; align-items: center; gap: 16px; padding: 8px 2px 0; }
+.log-pagination .auto-latest { margin-left: auto; }
 .server-workspace .register-panel { padding-top: 5px; }
 .server-list-panel { padding: 14px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
 .server-list-panel .panel-title { margin-bottom: 4px; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState } from '../store'
@@ -9,6 +9,9 @@ const store = useStore<RootState>()
 const filterDirection = ref<'全部' | 'TX' | 'RX'>('全部')
 const filterProtocol = ref<'全部' | 'RTU' | 'TCP'>('全部')
 const filterAddressRange = ref<'全部' | 'coil' | 'discrete' | 'input' | 'holding'>('全部')
+const currentPage = ref(1)
+const pageSize = ref(100)
+const autoLatest = ref(true)
 
 const addressRangeLabels: Record<string, string> = {
   coil: '线圈 0xxxx (00001-09999)',
@@ -53,11 +56,25 @@ const filteredLogs = computed(() => {
   })
 })
 
+/** @brief 当前页数据，避免一次渲染上万行导致卡顿。 */
+const pagedLogs = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredLogs.value.slice(start, start + pageSize.value)
+})
+
+/**
+ * @brief 新报文到达时自动回到第一页（日志为最新在前的倒序）。
+ *
+ * logs 按 unshift 倒序插入，新报文在第 1 页；若用户手动翻到其它页查看历史，
+ * 自动跳转会打断浏览，故仅在 autoLatest 开启时生效。
+ */
 watch(() => store.state.logs.length, () => {
-  nextTick(() => {
-    const tableBody = document.querySelector('.log-table .el-table__body-wrapper')
-    if (tableBody) tableBody.scrollTop = 0
-  })
+  if (autoLatest.value) currentPage.value = 1
+})
+
+/** @brief 切换过滤条件时重置到第一页。 */
+watch([filterDirection, filterProtocol, filterAddressRange, pageSize], () => {
+  currentPage.value = 1
 })
 
 async function handleExport(): Promise<void> {
@@ -100,9 +117,9 @@ async function handleExport(): Promise<void> {
     <section class="panel page-table">
       <div class="panel-title">
         <h3>报文日志</h3>
-        <span>显示 {{ filteredLogs.length }} / {{ store.state.logs.length }} 条</span>
+        <span>显示 {{ pagedLogs.length }} / {{ filteredLogs.length }} / {{ store.state.logs.length }} 条（当前/过滤后/总数）</span>
       </div>
-      <el-table :data="filteredLogs" height="100%" stripe class="log-table" empty-text="暂无通信报文">
+      <el-table :data="pagedLogs" height="calc(100% - 56px)" stripe class="log-table" empty-text="暂无通信报文">
         <el-table-column prop="id" label="#" width="60" />
         <el-table-column prop="time" label="时间" width="110" />
         <el-table-column prop="direction" label="方向" width="80">
@@ -116,6 +133,18 @@ async function handleExport(): Promise<void> {
         <el-table-column prop="elapsedMs" label="耗时(ms)" width="90" />
         <el-table-column prop="status" label="状态" width="80" />
       </el-table>
+      <div class="log-pagination">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[50, 100, 200, 500]"
+          :total="filteredLogs.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          small
+          background
+        />
+        <el-checkbox v-model="autoLatest" class="auto-latest">新报文自动跳到第一页</el-checkbox>
+      </div>
     </section>
   </div>
 </template>

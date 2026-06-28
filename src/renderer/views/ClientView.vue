@@ -17,6 +17,9 @@ const logPanelVisible = ref(true)
 const activeGroup = ref('全部')
 let dragging = false
 
+/** @brief 报文窗口仅渲染最近若干条，避免日志量大时拖慢渲染。 */
+const recentLogs = computed(() => store.state.logs.slice(0, 500))
+
 const groups = computed(() => {
   const set = new Set<string>()
   store.state.dictionary.forEach((item) => set.add(item.group || '默认分组'))
@@ -230,7 +233,7 @@ onBeforeUnmount(() => { dragging = false })
         <div class="panel-resizer" @mousedown="startResize"><span /></div>
         <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
           <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
-          <el-table :data="store.state.logs" height="100%" size="small" empty-text="暂无通信报文"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
+          <el-table :data="recentLogs" height="100%" size="small" empty-text="暂无通信报文（仅显示最近 500 条，完整日志见报文日志页）"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
         </section>
       </template>
     </section>
