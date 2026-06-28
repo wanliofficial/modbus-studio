@@ -1,6 +1,23 @@
 import { createStore } from 'vuex'
-import type { PacketLogItem, ProjectData, ProtocolMode, RecentProject, RegisterDefinition, SerialConfig, TcpConfig } from '../../shared/types'
+import type { PacketLogItem, ProjectData, ProtocolMode, RecentProject, RegisterDefinition, SerialConfig, TcpConfig, ServerDataUpdate, ServerEvent } from '../../shared/types'
 import { resolveRegisterAddress } from '../utils/register-data'
+
+/**
+ * @brief 从站运行态实例。
+ *
+ * 每个 TCP 从站对应一条记录，独立维护运行状态、请求数和四区数据。
+ */
+export interface ServerRuntimeInstance {
+  id: string
+  name: string
+  slaveId: number
+  tcpHost: string
+  tcpPort: number
+  protocol: ProtocolMode
+  running: boolean
+  requestCount: number
+  dictionaryRegisters: Record<string, number[]>
+}
 
 export interface RootState {
   protocol: ProtocolMode
@@ -14,9 +31,8 @@ export interface RootState {
     slaveId: number
     tcpHost: string
     tcpPort: number
-    dictionaryRegisters: Record<string, number[]>
-    requestCount: number
   }
+  servers: ServerRuntimeInstance[]
   client: {
     slaveId: number
     functionCode: 3 | 4
@@ -32,6 +48,9 @@ export interface RootState {
     lastElapsedMs: number
   }
   logs: PacketLogItem[]
+  txCount: number
+  rxCount: number
+  errorCount: number
   dictionary: RegisterDefinition[]
   project: {
     path: string
@@ -44,6 +63,7 @@ export interface RootState {
 }
 
 let logSequence = 1
+let serverIdSequence = 1
 
 /* 全局轮询状态 —— 存放于 store 模块作用域而非组件内，确保切换页面后轮询继续运行 */
 let pollTimer: ReturnType<typeof setInterval> | undefined
@@ -121,9 +141,13 @@ const store = createStore<RootState>({
     ports: [],
     connection: { path: 'COM3', baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none', timeout: 1000 },
     tcp: { host: '127.0.0.1', port: 502, timeout: 1000 },
-    server: { protocol: 'TCP', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502, dictionaryRegisters: {}, requestCount: 0 },
+    server: { protocol: 'TCP', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502 },
+    servers: [],
     client: { slaveId: 1, functionCode: 3, startAddress: 0, quantity: 10, pollInterval: 1000, polling: false, mergeRead: false, reading: false, registers: [], dictionaryRegisters: {}, dictionaryErrors: {}, lastElapsedMs: 0 },
     logs: [],
+    txCount: 0,
+    rxCount: 0,
+    errorCount: 0,
     dictionary: createDefaultDictionary(),
     project: { path: '', name: '未命名工程', description: '', version: '1.1.0', dirty: false },
     recentProjects: []
@@ -153,15 +177,33 @@ const store = createStore<RootState>({
         state.client.dictionaryErrors = next
       }
     },
-    setServerDictionaryRegisters(state, payload: { key: string; values: number[] }) {
-      state.server.dictionaryRegisters = { ...state.server.dictionaryRegisters, [payload.key]: payload.values }
+    addServerInstance(state, instance: ServerRuntimeInstance) { state.servers.push(instance); state.project.dirty = true },
+    updateServerInstance(state, payload: { id: string; patch: Partial<ServerRuntimeInstance> }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) Object.assign(target, payload.patch)
+      state.project.dirty = true
     },
-    incrementServerRequestCount(state) { state.server.requestCount += 1 },
+    removeServerInstance(state, id: string) {
+      state.servers = state.servers.filter((item) => item.id !== id)
+      state.project.dirty = true
+    },
+    setServerInstanceDictionaryRegisters(state, payload: { id: string; key: string; values: number[] }) {
+      const target = state.servers.find((item) => item.id === payload.id)
+      if (target) target.dictionaryRegisters = { ...target.dictionaryRegisters, [payload.key]: payload.values }
+    },
+    incrementServerInstanceRequestCount(state, id: string) {
+      const target = state.servers.find((item) => item.id === id)
+      if (target) target.requestCount += 1
+    },
     addLog(state, item: Omit<PacketLogItem, 'id'>) {
+      if (item.direction === 'TX') state.txCount += 1
+      else if (item.direction === 'RX') state.rxCount += 1
+      if (item.status === '失败') state.errorCount += 1
       state.logs.unshift({ id: logSequence++, ...item })
-      if (state.logs.length > 1000) state.logs.length = 1000
+      if (state.logs.length > 10000) state.logs.length = 10000
     },
     clearLogs(state) { state.logs = [] },
+    resetCounters(state) { state.txCount = 0; state.rxCount = 0; state.errorCount = 0 },
     addDictionaryItem(state, item: RegisterDefinition) { state.dictionary.push(item); state.project.dirty = true },
     updateDictionaryItem(state, payload: { index: number; item: RegisterDefinition }) { state.dictionary.splice(payload.index, 1, payload.item); state.project.dirty = true },
     removeDictionaryItem(state, index: number) { state.dictionary.splice(index, 1); state.project.dirty = true },
@@ -192,19 +234,39 @@ const store = createStore<RootState>({
         dictionaryRegisters: payload.data.clientData?.dictionaryRegisters ?? {},
         lastElapsedMs: payload.data.clientData?.lastElapsedMs ?? 0
       })
-      state.server.dictionaryRegisters = payload.data.serverData?.dictionaryRegisters ?? {}
-      state.server.requestCount = payload.data.serverData?.requestCount ?? 0
+      // 兼容旧工程：servers 缺失时由 server 配置迁移为单实例
+      const savedServers = payload.data.servers ?? []
+      const legacyData = payload.data.serverData
+      state.servers = (savedServers.length > 0 ? savedServers : [{ id: 'srv-' + serverIdSequence++, name: '从站 1', slaveId: payload.data.server?.slaveId ?? 1, tcpHost: payload.data.server?.tcpHost ?? '0.0.0.0', tcpPort: payload.data.server?.tcpPort ?? 502, protocol: payload.data.server?.protocol ?? 'TCP' }]).map((instance) => ({
+        id: instance.id || 'srv-' + serverIdSequence++,
+        name: instance.name,
+        slaveId: instance.slaveId,
+        tcpHost: instance.tcpHost,
+        tcpPort: instance.tcpPort,
+        protocol: instance.protocol,
+        running: false,
+        requestCount: legacyData?.requestCount ?? 0,
+        dictionaryRegisters: legacyData?.dictionaryRegisters ?? {}
+      } as ServerRuntimeInstance))
+      serverIdSequence = state.servers.reduce((max, item) => Math.max(max, Number(item.id.replace(/^srv-/, '')) || 0), 0) + 1
       state.logs = payload.data.packetLogs?.map((item) => ({ ...item })) ?? []
       logSequence = state.logs.reduce((maximum, item) => Math.max(maximum, item.id), 0) + 1
+      state.txCount = payload.data.counters?.tx ?? 0
+      state.rxCount = payload.data.counters?.rx ?? 0
+      state.errorCount = payload.data.counters?.error ?? 0
       state.dictionary = payload.data.registerDictionary
     },
     resetProject(state) {
       state.protocol = 'RTU'
       Object.assign(state.connection, { path: 'COM3', baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none', timeout: 1000 })
       Object.assign(state.tcp, { host: '127.0.0.1', port: 502, timeout: 1000 })
-      Object.assign(state.server, { protocol: 'TCP', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502, dictionaryRegisters: {}, requestCount: 0 })
+      Object.assign(state.server, { protocol: 'TCP', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502 })
+      state.servers = []
       Object.assign(state.client, { slaveId: 1, functionCode: 3, startAddress: 0, quantity: 10, pollInterval: 1000, polling: false, mergeRead: false, reading: false, registers: [], dictionaryRegisters: {}, dictionaryErrors: {}, lastElapsedMs: 0 })
       state.logs = []
+      state.txCount = 0
+      state.rxCount = 0
+      state.errorCount = 0
       state.dictionary = []
       state.project = { path: '', name: '未命名工程', description: '', version: '1.1.0', dirty: false }
     },
@@ -362,6 +424,7 @@ const store = createStore<RootState>({
      * @brief 按寄存器字典执行一轮读取（全部四区）。
      *
      * 自动根据地址范围选择 FC01～04，线圈和离散输入返回 0/1 位值。
+     * 支持字典项指定目标从站地址：未指定时使用全局 client.slaveId。
      */
     async readDictionary({ commit, state }) {
       const readableItems = state.dictionary.filter((item) => {
@@ -371,55 +434,66 @@ const store = createStore<RootState>({
       if (readableItems.length === 0) return
       const timeout = state.protocol === 'TCP' ? state.tcp.timeout : state.connection.timeout
 
-      if (state.client.mergeRead) {
-        const groups = groupConsecutiveItems(readableItems)
-        for (const group of groups) {
-          const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-          const fc = group.functionCode.toString().padStart(2, '0')
-          const label = group.functionCode <= 2 ? '位' : '寄存器'
-          try {
-            const result = await window.modbusApi.client.readRegisters({
-              protocol: state.protocol,
-              slaveId: state.client.slaveId,
-              functionCode: group.functionCode,
-              startAddress: group.startAddress,
-              quantity: group.quantity,
-              timeout
-            })
-            commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: result.tx, parsed: `合并读取 FC${fc}，起始地址 ${group.startAddress}，数量 ${group.quantity}（${group.items.length} 个字典项）`, elapsedMs: 0, status: '发送' })
-            commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: result.rx, parsed: `合并读取成功，收到 ${result.registers.length} 个${label}`, elapsedMs: result.elapsedMs, status: '成功' })
-            for (const { item, offset } of group.items) {
-              commit('setDictionaryRegisters', { key: String(item.address), values: result.registers.slice(offset, offset + item.length), elapsedMs: result.elapsedMs })
-              commit('setDictionaryError', { key: String(item.address), error: '' })
+      /** @brief 按目标从站地址分组，未指定 slaveId 的归入全局从站。 */
+      const groupBySlave = new Map<number, RegisterDefinition[]>()
+      for (const item of readableItems) {
+        const sid = item.slaveId ?? state.client.slaveId
+        const bucket = groupBySlave.get(sid) ?? []
+        bucket.push(item)
+        groupBySlave.set(sid, bucket)
+      }
+
+      for (const [sid, items] of groupBySlave) {
+        if (state.client.mergeRead) {
+          const groups = groupConsecutiveItems(items)
+          for (const group of groups) {
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+            const fc = group.functionCode.toString().padStart(2, '0')
+            const label = group.functionCode <= 2 ? '位' : '寄存器'
+            try {
+              const result = await window.modbusApi.client.readRegisters({
+                protocol: state.protocol,
+                slaveId: sid,
+                functionCode: group.functionCode,
+                startAddress: group.startAddress,
+                quantity: group.quantity,
+                timeout
+              })
+              commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: result.tx, parsed: `合并读取 FC${fc}，从站 ${sid}，起始地址 ${group.startAddress}，数量 ${group.quantity}（${group.items.length} 个字典项）`, elapsedMs: 0, status: '发送' })
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: result.rx, parsed: `合并读取成功，收到 ${result.registers.length} 个${label}`, elapsedMs: result.elapsedMs, status: '成功' })
+              for (const { item, offset } of group.items) {
+                commit('setDictionaryRegisters', { key: String(item.address), values: result.registers.slice(offset, offset + item.length), elapsedMs: result.elapsedMs })
+                commit('setDictionaryError', { key: String(item.address), error: '' })
+              }
+            } catch (error) {
+              const message = (error as Error).message
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `合并读取失败：${message}`, elapsedMs: 0, status: '失败' })
+              for (const { item } of group.items) commit('setDictionaryError', { key: String(item.address), error: message })
             }
-          } catch (error) {
-            const message = (error as Error).message
-            commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `合并读取失败：${message}`, elapsedMs: 0, status: '失败' })
-            for (const { item } of group.items) commit('setDictionaryError', { key: String(item.address), error: message })
           }
-        }
-      } else {
-        for (const item of readableItems) {
-          const info = getAddressInfo(item.address)
-          if (!info) continue
-          const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-          try {
-            const result = await window.modbusApi.client.readRegisters({
-              protocol: state.protocol,
-              slaveId: state.client.slaveId,
-              functionCode: info.functionCode,
-              startAddress: info.protocolAddress,
-              quantity: item.length,
-              timeout
-            })
-            commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: result.tx, parsed: `字典读取 ${item.name}，地址 ${item.address}，长度 ${item.length}`, elapsedMs: 0, status: '发送' })
-            commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: result.rx, parsed: `${item.name} 读取成功`, elapsedMs: result.elapsedMs, status: '成功' })
-            commit('setDictionaryRegisters', { key: String(item.address), values: result.registers, elapsedMs: result.elapsedMs })
-            commit('setDictionaryError', { key: String(item.address), error: '' })
-          } catch (error) {
-            const message = (error as Error).message
-            commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `${item.name} 读取失败：${message}`, elapsedMs: 0, status: '失败' })
-            commit('setDictionaryError', { key: String(item.address), error: message })
+        } else {
+          for (const item of items) {
+            const info = getAddressInfo(item.address)
+            if (!info) continue
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+            try {
+              const result = await window.modbusApi.client.readRegisters({
+                protocol: state.protocol,
+                slaveId: sid,
+                functionCode: info.functionCode,
+                startAddress: info.protocolAddress,
+                quantity: item.length,
+                timeout
+              })
+              commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: result.tx, parsed: `字典读取 ${item.name}，从站 ${sid}，地址 ${item.address}，长度 ${item.length}`, elapsedMs: 0, status: '发送' })
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: result.rx, parsed: `${item.name} 读取成功`, elapsedMs: result.elapsedMs, status: '成功' })
+              commit('setDictionaryRegisters', { key: String(item.address), values: result.registers, elapsedMs: result.elapsedMs })
+              commit('setDictionaryError', { key: String(item.address), error: '' })
+            } catch (error) {
+              const message = (error as Error).message
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `${item.name} 读取失败：${message}`, elapsedMs: 0, status: '失败' })
+              commit('setDictionaryError', { key: String(item.address), error: message })
+            }
           }
         }
       }
@@ -446,6 +520,88 @@ const store = createStore<RootState>({
       } catch (error) {
         commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: '-', parsed: `FC${code} 写${target}失败：${(error as Error).message}`, elapsedMs: 0, status: '失败' })
         throw error
+      }
+    },
+    /**
+     * @brief 新增一个从站实例。
+     *
+     * 以 server 默认配置为模板生成运行态记录，端口递增避免冲突。
+     */
+    addServerInstance({ commit, state }) {
+      const index = state.servers.length + 1
+      const id = 'srv-' + serverIdSequence++
+      commit('addServerInstance', {
+        id,
+        name: `从站 ${index}`,
+        slaveId: state.server.slaveId,
+        tcpHost: state.server.tcpHost,
+        tcpPort: state.server.tcpPort + state.servers.length,
+        protocol: state.server.protocol,
+        running: false,
+        requestCount: 0,
+        dictionaryRegisters: {}
+      })
+    },
+    /**
+     * @brief 启动或停止指定从站实例。
+     *
+     * 启动时收集字典数据并调用主进程，停止时调用主进程停止接口。
+     */
+    async toggleServerInstance({ commit, state }, id: string) {
+      const instance = state.servers.find((item) => item.id === id)
+      if (!instance) throw new Error('从站实例不存在')
+      if (instance.running) {
+        await window.modbusApi.server.stopInstance(id)
+        commit('updateServerInstance', { id, patch: { running: false } })
+        return
+      }
+      const data: ServerDataUpdate[] = state.dictionary.flatMap((item) => {
+        const addressInfo = resolveRegisterAddress(item.address)
+        if (!addressInfo) return []
+        const stored = instance.dictionaryRegisters[String(item.address)]
+        const values = stored ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
+        return values.map((value, index) => ({ area: addressInfo.area, address: addressInfo.protocolAddress + index, value }))
+      })
+      await window.modbusApi.server.startInstance({ id: instance.id, name: instance.name, slaveId: instance.slaveId, tcpHost: instance.tcpHost, tcpPort: instance.tcpPort, protocol: instance.protocol }, data)
+      commit('updateServerInstance', { id, patch: { running: true } })
+    },
+    /**
+     * @brief 移除从站实例并停止其服务。
+     */
+    async removeServerInstance({ commit, state }, id: string) {
+      const instance = state.servers.find((item) => item.id === id)
+      if (instance?.running) await window.modbusApi.server.stopInstance(id)
+      commit('removeServerInstance', id)
+    },
+    /**
+     * @brief 处理主进程从站事件（全局，不受路由切换影响）。
+     *
+     * 将外部主站写入映射回覆盖该地址的字典项，并累计请求计数、记录日志。
+     */
+    handleServerEvent({ commit, state }, event: ServerEvent) {
+      if (!event.instanceId) return
+      if (event.type === 'status') commit('updateServerInstance', { id: event.instanceId, patch: { running: Boolean(event.running) } })
+      if (event.type === 'data' && event.update) {
+        const update = event.update
+        const item = state.dictionary.find((candidate) => {
+          const info = resolveRegisterAddress(candidate.address)
+          return info?.area === update.area && update.address >= info.protocolAddress && update.address < info.protocolAddress + Math.max(1, candidate.length)
+        })
+        if (item) {
+          const info = resolveRegisterAddress(item.address)
+          if (info) {
+            const instance = state.servers.find((s) => s.id === event.instanceId)
+            if (instance) {
+              const values = instance.dictionaryRegisters[String(item.address)] ? [...instance.dictionaryRegisters[String(item.address)]] : Array.from({ length: Math.max(1, item.length) }, () => 0)
+              values[update.address - info.protocolAddress] = update.value
+              commit('setServerInstanceDictionaryRegisters', { id: event.instanceId, key: String(item.address), values })
+            }
+          }
+        }
+      }
+      if (event.type === 'log' && event.log) {
+        commit('addLog', event.log)
+        if (event.log.direction === 'RX') commit('incrementServerInstanceRequestCount', event.instanceId)
       }
     },
     /**
@@ -476,18 +632,28 @@ const store = createStore<RootState>({
         server: { protocol: state.server.protocol, slaveId: state.server.slaveId, tcpHost: state.server.tcpHost, tcpPort: state.server.tcpPort },
         client: { slaveId: state.client.slaveId, functionCode: state.client.functionCode, startAddress: state.client.startAddress, quantity: state.client.quantity, timeout: state.connection.timeout, pollInterval: state.client.pollInterval, mergeRead: state.client.mergeRead },
         registerDictionary: state.dictionary.map((item) => ({ ...item })),
+        servers: state.servers.map((instance) => ({
+          id: instance.id,
+          name: instance.name,
+          slaveId: instance.slaveId,
+          tcpHost: instance.tcpHost,
+          tcpPort: instance.tcpPort,
+          protocol: instance.protocol
+        })),
         clientData: {
           dictionaryRegisters: Object.fromEntries(Object.entries(state.client.dictionaryRegisters).map(([key, values]) => [key, [...values]])),
           lastElapsedMs: state.client.lastElapsedMs
         },
         serverData: {
           dictionaryRegisters: Object.fromEntries(state.dictionary.map((item) => {
-            const values = state.server.dictionaryRegisters[String(item.address)] ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
+            const primary = state.servers[0]
+            const values = primary?.dictionaryRegisters[String(item.address)] ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
             return [String(item.address), [...values]]
           })),
-          requestCount: state.server.requestCount
+          requestCount: state.servers.reduce((total, instance) => total + instance.requestCount, 0)
         },
-        packetLogs: state.logs.map((item) => ({ ...item }))
+        packetLogs: state.logs.map((item) => ({ ...item })),
+        counters: { tx: state.txCount, rx: state.rxCount, error: state.errorCount }
       }
       const serializableData = JSON.parse(JSON.stringify(data)) as ProjectData
       const path = await window.modbusApi.project.save(serializableData, state.project.path || undefined, saveAs)

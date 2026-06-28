@@ -33,9 +33,9 @@ const api: ModbusApi = {
     writeMultipleRegisters: (params) => ipcRenderer.invoke('client:write-multiple', toSerializable(params))
   },
   server: {
-    start: (config, data) => ipcRenderer.invoke('server:start', toSerializable(config), toSerializable(data)),
-    stop: () => ipcRenderer.invoke('server:stop'),
-    updateData: (update) => ipcRenderer.invoke('server:update-data', toSerializable(update)),
+    startInstance: (instance, data) => ipcRenderer.invoke('server:start-instance', toSerializable(instance), toSerializable(data)),
+    stopInstance: (id) => ipcRenderer.invoke('server:stop-instance', id),
+    updateInstanceData: (id, update) => ipcRenderer.invoke('server:update-instance-data', id, toSerializable(update)),
     onEvent: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]): void => callback(payload)
       ipcRenderer.on('server:event', listener)

@@ -19,7 +19,7 @@ const filteredDictionary = computed(() => {
 })
 
 function createEmptyItem(): RegisterDefinition {
-  return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'R', factor: 1, unit: '无', remark: '' }
+  return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'R', factor: 1, unit: '无', remark: '', slaveId: undefined }
 }
 
 function openCreateDialog(): void {
@@ -42,7 +42,7 @@ function saveItem(): void {
   if (!draft.name.trim()) { ElMessage.warning('请输入寄存器名称'); return }
   if (draft.length < 1) { ElMessage.warning('寄存器长度不能小于 1'); return }
   if (!Number.isFinite(draft.factor)) { ElMessage.warning('比例因子必须是有效数字'); return }
-  const item = { ...draft, name: draft.name.trim(), group: draft.group.trim() || '默认分组', unit: draft.unit.trim() || '无' }
+  const item = { ...draft, name: draft.name.trim(), group: draft.group.trim() || '默认分组', unit: draft.unit.trim() || '无', slaveId: draft.slaveId || undefined }
   if (editingIndex.value >= 0) store.commit('updateDictionaryItem', { index: editingIndex.value, item })
   else store.commit('addDictionaryItem', item)
   dialogVisible.value = false
@@ -111,6 +111,7 @@ function handleMoveDown(index: number): void {
       <el-table :data="filteredDictionary" height="100%" stripe>
         <el-table-column label="分组" min-width="120"><template #default="scope">{{ scope.row.item.group }}</template></el-table-column>
         <el-table-column label="地址" width="100"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
+        <el-table-column label="从站" width="80"><template #default="scope">{{ scope.row.item.slaveId ? scope.row.item.slaveId : '全局' }}</template></el-table-column>
         <el-table-column label="名称" min-width="130"><template #default="scope">{{ scope.row.item.name }}</template></el-table-column>
         <el-table-column label="数据类型" min-width="120"><template #default="scope">{{ scope.row.item.dataType }}</template></el-table-column>
         <el-table-column label="长度" width="70"><template #default="scope">{{ scope.row.item.length }}</template></el-table-column>
@@ -137,6 +138,8 @@ function handleMoveDown(index: number): void {
           <el-form-item label="分组"><el-input v-model="draft.group" placeholder="例如：温度传感器" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="draft.name" placeholder="请输入寄存器名称" /></el-form-item>
           <el-form-item label="地址"><el-input-number v-model="draft.address" :min="0" :max="65535" controls-position="right" /></el-form-item>
+          <el-form-item label="从站地址"><el-input-number v-model="draft.slaveId" :min="0" :max="247" controls-position="right" /></el-form-item>
+          <div class="form-tip" style="grid-column: 1 / -1; font-size: 11px; color: #7b8798; margin-top: -4px;">设为 0 表示跟随客户端全局从站地址</div>
           <el-form-item label="数据类型"><el-select v-model="draft.dataType" @change="onDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>
           <el-form-item label="长度"><el-input-number v-model="draft.length" :min="1" :max="125" controls-position="right" /></el-form-item>
           <el-form-item label="读写权限"><el-select v-model="draft.access"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></el-form-item>

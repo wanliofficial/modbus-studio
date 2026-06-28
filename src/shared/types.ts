@@ -60,6 +60,15 @@ export interface ServerConfig {
   tcp: { host: string; port: number }
 }
 
+export interface ServerInstanceConfig {
+  id: string
+  name: string
+  slaveId: number
+  tcpHost: string
+  tcpPort: number
+  protocol: ProtocolMode
+}
+
 export interface ServerDataUpdate {
   area: ServerAreaName
   address: number
@@ -68,6 +77,7 @@ export interface ServerDataUpdate {
 
 export interface ServerEvent {
   type: 'status' | 'data' | 'log'
+  instanceId?: string
   running?: boolean
   protocol?: ProtocolMode
   update?: ServerDataUpdate
@@ -98,6 +108,7 @@ export interface ProjectData {
     tcpHost: string
     tcpPort: number
   }
+  servers?: ServerInstanceConfig[]
   client: ReadRegistersParams & { pollInterval: number; mergeRead?: boolean }
   registerDictionary: RegisterDefinition[]
   clientData?: {
@@ -109,6 +120,7 @@ export interface ProjectData {
     requestCount: number
   }
   packetLogs?: PacketLogItem[]
+  counters?: { tx: number; rx: number; error: number }
 }
 
 export interface RecentProject {
@@ -127,6 +139,7 @@ export interface RegisterDefinition {
   factor: number
   unit: string
   remark: string
+  slaveId?: number
 }
 
 export interface ModbusApi {
@@ -150,9 +163,9 @@ export interface ModbusApi {
     writeMultipleRegisters: (params: WriteMultipleRegistersParams) => Promise<TransactionResult>
   }
   server: {
-    start: (config: ServerConfig, data: ServerDataUpdate[]) => Promise<void>
-    stop: () => Promise<void>
-    updateData: (update: ServerDataUpdate) => Promise<void>
+    startInstance: (instance: ServerInstanceConfig, data: ServerDataUpdate[]) => Promise<void>
+    stopInstance: (id: string) => Promise<void>
+    updateInstanceData: (id: string, update: ServerDataUpdate) => Promise<void>
     onEvent: (callback: (event: ServerEvent) => void) => () => void
   }
   project: {
