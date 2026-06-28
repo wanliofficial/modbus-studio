@@ -13,12 +13,24 @@ const store = useStore<RootState>()
 const editValues = reactive<Record<string, string>>({})
 const logPanelRef = ref<HTMLElement | null>(null)
 const logPanelHeight = ref(260)
+const logPanelVisible = ref(true)
+const activeGroup = ref('全部')
 let dragging = false
 
-const rows = computed(() => store.state.dictionary.map((item) => {
-  const values = store.state.client.dictionaryRegisters[String(item.address)] ?? []
-  return { item, values, hex: formatRegisterHex(values), parsed: decodeRegisterValue(item, values) }
-}))
+const groups = computed(() => {
+  const set = new Set<string>()
+  store.state.dictionary.forEach((item) => set.add(item.group || '默认分组'))
+  return ['全部', ...set]
+})
+
+const rows = computed(() => {
+  const all = store.state.dictionary.map((item) => {
+    const values = store.state.client.dictionaryRegisters[String(item.address)] ?? []
+    return { item, values, hex: formatRegisterHex(values), parsed: decodeRegisterValue(item, values) }
+  })
+  if (activeGroup.value === '全部') return all
+  return all.filter((row) => (row.item.group || '默认分组') === activeGroup.value)
+})
 
 /**
  * @brief 判断字典条目是否为位区（线圈或离散输入）。
@@ -177,7 +189,14 @@ onBeforeUnmount(() => { dragging = false })
         <div class="poll-status"><i :class="{ online: store.state.connected && store.state.client.polling }" /><span>{{ !store.state.connected ? '等待连接' : store.state.client.reading ? '正在读取字典' : '自动循环中' }}</span></div>
       </section>
       <section class="panel register-panel">
-        <div class="panel-title"><h3>字典寄存器数据</h3><span>实际值 = 解析值 × 倍率，HEX 为设备原始发送数据；最近响应：{{ store.state.client.lastElapsedMs || '-' }} ms</span></div>
+        <div class="panel-title"><h3>字典寄存器数据</h3><span>实际值 = 解析值 × 倍率，HEX 为设备原始发送数据；最近响应：{{ store.state.client.lastElapsedMs || '-' }} ms</span>
+          <el-tooltip :content="logPanelVisible ? '隐藏报文日志' : '显示报文日志'" placement="top">
+            <el-button class="log-toggle" :type="logPanelVisible ? 'primary' : 'default'" size="small" @click="logPanelVisible = !logPanelVisible">{{ logPanelVisible ? '隐藏报文' : '显示报文' }}</el-button>
+          </el-tooltip>
+        </div>
+        <div class="group-tabs">
+          <button v-for="group in groups" :key="group" class="group-tab" :class="{ active: activeGroup === group }" @click="activeGroup = group">{{ group }}</button>
+        </div>
         <el-table :data="rows" height="100%" stripe empty-text="寄存器字典为空，请先添加字典条目" :row-class-name="getRowClass">
           <el-table-column label="地址" width="90"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
           <el-table-column label="名称" min-width="150"><template #default="scope"><strong>{{ scope.row.item.name }}</strong><small class="cell-meta">{{ scope.row.item.dataType }} / 长度 {{ scope.row.item.length }}</small></template></el-table-column>
@@ -209,11 +228,13 @@ onBeforeUnmount(() => { dragging = false })
           <el-table-column label="备注" min-width="180"><template #default="scope">{{ scope.row.item.remark }}</template></el-table-column>
         </el-table>
       </section>
-      <div class="panel-resizer" @mousedown="startResize"><span /></div>
-      <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
-        <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
-        <el-table :data="store.state.logs" height="100%" size="small" empty-text="暂无通信报文"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
-      </section>
+      <template v-if="logPanelVisible">
+        <div class="panel-resizer" @mousedown="startResize"><span /></div>
+        <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
+          <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
+          <el-table :data="store.state.logs" height="100%" size="small" empty-text="暂无通信报文"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
+        </section>
+      </template>
     </section>
   </div>
 </template>
