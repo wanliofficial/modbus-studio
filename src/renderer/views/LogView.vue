@@ -93,7 +93,7 @@ async function handleExport(): Promise<void> {
         <el-option :label="addressRangeLabels.holding" value="holding" />
       </el-select>
       <span class="toolbar-spacer" />
-      <span class="toolbar-tip" style="margin-right: 16px">保留最近 1000 条，新报文自动刷新</span>
+      <span class="toolbar-tip" style="margin-right: 16px">保留最近 10000 条，新报文自动刷新</span>
       <el-button @click="handleExport">导出日志</el-button>
       <el-button @click="store.commit('clearLogs')">清空日志</el-button>
     </section>

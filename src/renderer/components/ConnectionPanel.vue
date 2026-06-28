@@ -65,6 +65,6 @@ onMounted(refreshPorts)
       <el-button class="connect-button" :type="store.state.connected ? 'danger' : 'primary'" :loading="store.state.connecting" @click="toggleConnection">{{ store.state.connected ? '断开连接' : `连接 ${store.state.protocol}` }}</el-button>
       <div class="connection-state"><i :class="{ online: store.state.connected }" />{{ store.state.connected ? '已连接' : '未连接' }}<span>{{ store.state.protocol === 'RTU' ? connection.path : `${tcp.host}:${tcp.port}` }}</span></div>
     </section>
-    <section class="panel stats-panel"><h3>通信统计</h3><div><span>发送计数</span><strong>{{ store.state.logs.filter(item => item.direction === 'TX').length }}</strong></div><div><span>接收计数</span><strong>{{ store.state.logs.filter(item => item.direction === 'RX').length }}</strong></div><div><span>错误计数</span><strong>{{ store.state.logs.filter(item => item.status === '失败').length }}</strong></div></section>
+    <section class="panel stats-panel"><h3>通信统计</h3><div><span>发送计数</span><strong>{{ store.state.txCount }}</strong></div><div><span>接收计数</span><strong>{{ store.state.rxCount }}</strong></div><div><span>错误计数</span><strong>{{ store.state.errorCount }}</strong></div><el-button class="reset-button" size="small" @click="store.commit('resetCounters')">重置统计</el-button></section>
   </aside>
 </template>
