@@ -180,17 +180,18 @@ onBeforeUnmount(() => { dragging = false })
   <div class="workspace client-workspace">
     <ConnectionPanel />
     <section class="content-column">
-      <section class="panel register-panel">
-        <div class="panel-title client-panel-title">
+      <section class="panel client-toolbar">
+        <div class="toolbar-info">
           <h3>字典寄存器数据</h3>
           <span class="panel-desc">实际值 = 解析值 × 倍率，HEX 为设备原始发送数据；最近响应：{{ store.state.client.lastElapsedMs || '-' }} ms</span>
-          <div class="client-controls">
-            <div class="inline-control"><label>循环周期</label><el-input-number class="poll-input" :model-value="store.state.client.pollInterval" :min="100" :step="100" controls-position="right" @update:model-value="store.dispatch('setPollInterval', $event)" /><span class="input-unit">ms</span></div>
-            <div class="inline-control"><label>合并读取</label><el-switch :model-value="store.state.client.mergeRead" @update:model-value="store.commit('setMergeRead', $event)" size="small" /></div>
-            <div class="poll-dot" :title="!store.state.connected ? '等待连接' : store.state.client.reading ? '正在读取字典' : '自动循环中'"><i :class="{ online: store.state.connected && store.state.client.polling }" /></div>
-            <button class="log-toggle" :class="{ expanded: logPanelVisible }" @click="logPanelVisible = !logPanelVisible">{{ logPanelVisible ? '隐藏报文' : '显示报文' }}</button>
-          </div>
         </div>
+        <span class="toolbar-spacer" />
+        <div class="inline-control"><label>循环周期</label><el-input-number :model-value="store.state.client.pollInterval" :min="100" :step="100" controls-position="right" @update:model-value="store.dispatch('setPollInterval', $event)" /><span class="input-unit">ms</span></div>
+        <div class="inline-control"><label>合并读取</label><el-switch :model-value="store.state.client.mergeRead" @update:model-value="store.commit('setMergeRead', $event)" size="small" /></div>
+        <div class="poll-dot" :title="!store.state.connected ? '等待连接' : store.state.client.reading ? '正在读取字典' : '自动循环中'"><i :class="{ online: store.state.connected && store.state.client.polling }" /></div>
+        <button class="log-toggle" :class="{ expanded: logPanelVisible }" @click="logPanelVisible = !logPanelVisible">{{ logPanelVisible ? '隐藏报文' : '显示报文' }}</button>
+      </section>
+      <section class="panel register-panel">
         <div class="group-tabs">
           <button v-for="group in groups" :key="group" class="group-tab" :class="{ active: activeGroup === group }" @click="activeGroup = group">{{ group }}</button>
         </div>
