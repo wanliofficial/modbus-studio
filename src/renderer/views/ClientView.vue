@@ -39,6 +39,14 @@ function handleLogScroll({ scrollTop }: { scrollTop: number }): void {
   }
 }
 
+/**
+ * @brief 报文表格可视高度（容器高度减标题、内边距与表头），避免最后一行被裁切。
+ *
+ * compact-log 容器由 logPanelHeight 固定；扣除标题约 32px、上下内边距 20px、
+ * size=small 表头约 32px，余下才是数据区滚动高度。
+ */
+const logTableHeight = computed(() => Math.max(80, logPanelHeight.value - 84))
+
 const groups = computed(() => {
   const set = new Set<string>()
   store.state.dictionary.forEach((item) => set.add(item.group || '默认分组'))
@@ -252,7 +260,7 @@ onBeforeUnmount(() => { dragging = false })
         <div class="panel-resizer" @mousedown="startResize"><span /></div>
         <section ref="logPanelRef" class="panel compact-log" :style="{ flex: '0 0 ' + logPanelHeight + 'px' }">
           <div class="panel-title"><h3>报文日志</h3><el-button link type="primary" @click="store.commit('clearLogs')">清空日志</el-button></div>
-          <el-table :data="recentLogs" height="100%" size="small" empty-text="暂无通信报文（最新在前，向下滚动加载更早报文）" @scroll="handleLogScroll"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
+          <el-table :data="recentLogs" :height="logTableHeight" size="small" empty-text="暂无通信报文（最新在前，向下滚动加载更早报文）" @scroll="handleLogScroll"><el-table-column prop="time" label="时间" width="100" /><el-table-column prop="direction" label="方向" width="70"><template #default="scope"><b :class="scope.row.direction.toLowerCase()">{{ scope.row.direction }}</b></template></el-table-column><el-table-column prop="raw" label="数据" min-width="280" show-overflow-tooltip /><el-table-column prop="parsed" label="解析结果" min-width="260" show-overflow-tooltip /><el-table-column prop="elapsedMs" label="耗时" width="75" /><el-table-column prop="status" label="状态" width="75" /></el-table>
         </section>
       </template>
     </section>
