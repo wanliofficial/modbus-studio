@@ -13,6 +13,8 @@ const activeArea = ref<ServerAreaName>('holding')
 const selectedId = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const draftVisible = ref(false)
+/** @brief 编辑模式标记：非空表示正在编辑该 id 的从站，null 表示新增。 */
+const editingInstanceId = ref<string | null>(null)
 const draft = reactive({
   name: '',
   slaveId: 1,
@@ -111,6 +113,7 @@ async function updateBitValue(item: RegisterDefinition, value: string | number |
 
 /* ---- 从站实例管理 ---- */
 function openCreateDialog(): void {
+  editingInstanceId.value = null
   Object.assign(draft, {
     name: `从站 ${store.state.servers.length + 1}`,
     slaveId: store.state.server.slaveId,
@@ -122,26 +125,54 @@ function openCreateDialog(): void {
   draftVisible.value = true
 }
 
+/**
+ * @brief 打开编辑从站对话框。
+ *
+ * 运行中的从站禁止编辑，需先停止以避免配置与运行态不一致。
+ * @param instance 待编辑的从站实例。
+ */
+function openEditDialog(instance: ServerRuntimeInstance): void {
+  if (instance.running) { ElMessage.warning('请先停止该从站再编辑'); return }
+  editingInstanceId.value = instance.id
+  Object.assign(draft, {
+    name: instance.name,
+    slaveId: instance.slaveId,
+    tcpHost: instance.tcpHost,
+    tcpPort: instance.tcpPort,
+    protocol: instance.protocol,
+    serial: { ...instance.serial }
+  })
+  draftVisible.value = true
+}
+
 function saveInstance(): void {
   if (!draft.name.trim()) { ElMessage.warning('请输入从站名称'); return }
   if (draft.protocol === 'RTU' && !draft.serial.path.trim()) { ElMessage.warning('请选择串口'); return }
-  const id = 'srv-' + Date.now()
-  store.commit('addServerInstance', {
-    id,
+  const payload = {
     name: draft.name.trim(),
     slaveId: draft.slaveId,
     tcpHost: draft.tcpHost,
     tcpPort: draft.tcpPort,
     protocol: draft.protocol,
-    serial: { ...draft.serial },
-    running: false,
-    requestCount: 0,
-    dictionaryRegisters: {},
-    points: []
-  })
-  selectedId.value = id
+    serial: { ...draft.serial }
+  }
+  if (editingInstanceId.value) {
+    store.commit('updateServerInstance', { id: editingInstanceId.value, patch: payload })
+    ElMessage.success('从站已更新')
+  } else {
+    const id = 'srv-' + Date.now()
+    store.commit('addServerInstance', {
+      id,
+      ...payload,
+      running: false,
+      requestCount: 0,
+      dictionaryRegisters: {},
+      points: []
+    })
+    selectedId.value = id
+    ElMessage.success('从站已添加')
+  }
   draftVisible.value = false
-  ElMessage.success('从站已添加')
 }
 
 async function toggleInstance(id: string): Promise<void> {
@@ -253,6 +284,7 @@ onMounted(() => {
           </div>
           <div class="server-item-actions" @click.stop>
             <el-button size="small" :type="instance.running ? 'danger' : 'success'" @click="toggleInstance(instance.id)">{{ instance.running ? '停止' : '启动' }}</el-button>
+            <el-button size="small" link type="primary" @click="openEditDialog(instance)">编辑</el-button>
             <el-button size="small" link type="danger" @click="removeInstance(instance.id)">删除</el-button>
           </div>
         </div>
@@ -298,7 +330,7 @@ onMounted(() => {
       </section>
     </section>
 
-    <el-dialog v-model="draftVisible" title="新增从站" width="480px">
+    <el-dialog v-model="draftVisible" :title="editingInstanceId ? '编辑从站' : '新增从站'" width="480px">
       <el-form label-width="90px">
         <el-form-item label="名称"><el-input v-model="draft.name" /></el-form-item>
         <el-form-item label="协议"><el-select v-model="draft.protocol"><el-option label="Modbus TCP" value="TCP" /><el-option label="Modbus UDP" value="UDP" /><el-option label="Modbus RTU" value="RTU" /></el-select></el-form-item>
