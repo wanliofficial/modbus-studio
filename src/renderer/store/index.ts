@@ -327,11 +327,18 @@ const store = createStore<RootState>({
         if (state.connected) {
           await dispatch('stopPolling')
           if (state.protocol === 'TCP') await window.modbusApi.tcp.disconnect()
+          else if (state.protocol === 'UDP') await window.modbusApi.udp.disconnect()
           else await window.modbusApi.serial.close()
           commit('setConnected', false)
         } else {
           if (state.protocol === 'TCP') {
             await window.modbusApi.tcp.connect({
+              host: String(state.tcp.host),
+              port: Number(state.tcp.port),
+              timeout: Number(state.tcp.timeout)
+            })
+          } else if (state.protocol === 'UDP') {
+            await window.modbusApi.udp.connect({
               host: String(state.tcp.host),
               port: Number(state.tcp.port),
               timeout: Number(state.tcp.timeout)
@@ -441,7 +448,7 @@ const store = createStore<RootState>({
         functionCode: state.client.functionCode,
         startAddress: state.client.startAddress,
         quantity: state.client.quantity,
-        timeout: state.protocol === 'TCP' ? state.tcp.timeout : state.connection.timeout
+        timeout: state.protocol === 'RTU' ? state.connection.timeout : state.tcp.timeout
       })
       const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
       commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: result.tx, parsed: `读取功能码 ${state.client.functionCode.toString().padStart(2, '0')}，起始地址 ${state.client.startAddress}，数量 ${state.client.quantity}`, elapsedMs: 0, status: '发送' })
@@ -460,7 +467,7 @@ const store = createStore<RootState>({
         return getAddressInfo(item.address) !== null
       })
       if (readableItems.length === 0) return
-      const timeout = state.protocol === 'TCP' ? state.tcp.timeout : state.connection.timeout
+      const timeout = state.protocol === 'RTU' ? state.connection.timeout : state.tcp.timeout
 
       /** @brief 按目标从站地址分组，未指定 slaveId 的归入全局从站。 */
       const groupBySlave = new Map<number, RegisterDefinition[]>()
@@ -534,7 +541,7 @@ const store = createStore<RootState>({
      * @param payload 写入地址和值数组。
      */
     async writeRegisters({ commit, state }, payload: { address: number; values: number[]; isCoil?: boolean }) {
-      const common = { protocol: state.protocol, slaveId: state.client.slaveId, timeout: state.protocol === 'TCP' ? state.tcp.timeout : state.connection.timeout }
+      const common = { protocol: state.protocol, slaveId: state.client.slaveId, timeout: state.protocol === 'RTU' ? state.connection.timeout : state.tcp.timeout }
       const isCoil = payload.isCoil ?? false
       const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
       const code = payload.values.length === 1 ? (isCoil ? '05' : '06') : (isCoil ? '0F' : '10')

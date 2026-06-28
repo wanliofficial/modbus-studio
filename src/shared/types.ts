@@ -159,6 +159,10 @@ export interface ModbusApi {
     connect: (config: TcpConfig) => Promise<void>
     disconnect: () => Promise<void>
   }
+  udp: {
+    connect: (config: TcpConfig) => Promise<void>
+    disconnect: () => Promise<void>
+  }
   client: {
     readRegisters: (params: ReadRegistersParams) => Promise<TransactionResult>
     writeSingleRegister: (params: WriteRegisterParams) => Promise<TransactionResult>

@@ -27,6 +27,10 @@ const api: ModbusApi = {
     connect: (config) => ipcRenderer.invoke('tcp:connect', toSerializable(config)),
     disconnect: () => ipcRenderer.invoke('tcp:disconnect')
   },
+  udp: {
+    connect: (config) => ipcRenderer.invoke('udp:connect', toSerializable(config)),
+    disconnect: () => ipcRenderer.invoke('udp:disconnect')
+  },
   client: {
     readRegisters: (params) => ipcRenderer.invoke('client:read-registers', toSerializable(params)),
     writeSingleRegister: (params) => ipcRenderer.invoke('client:write-single', toSerializable(params)),

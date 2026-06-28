@@ -47,7 +47,7 @@ onMounted(refreshPorts)
   <aside class="side-column">
     <section class="panel connection-panel">
       <h3>连接配置</h3>
-      <label>协议类型</label><el-select :model-value="store.state.protocol" :disabled="store.state.connected" @change="changeProtocol"><el-option label="Modbus RTU" value="RTU" /><el-option label="Modbus TCP" value="TCP" /></el-select>
+      <label>协议类型</label><el-select :model-value="store.state.protocol" :disabled="store.state.connected" @change="changeProtocol"><el-option label="Modbus RTU" value="RTU" /><el-option label="Modbus TCP" value="TCP" /><el-option label="Modbus UDP" value="UDP" /></el-select>
       <template v-if="store.state.protocol === 'RTU'">
         <div class="section-label">串口设置 <el-button link type="primary" @click="refreshPorts">刷新</el-button></div>
         <label>端口</label><el-select v-model="connection.path"><el-option v-for="port in store.state.ports" :key="port" :label="port" :value="port" /></el-select>

@@ -6,13 +6,30 @@ import type { PacketLogItem, ProjectData, ReadRegistersParams, RecentProject, Re
 import { SerialService } from './services/SerialService'
 import { ModbusClientService } from './services/ModbusClientService'
 import { TcpClientService } from './services/TcpClientService'
+import { UdpClientService } from './services/UdpClientService'
 import { ModbusServerService } from './services/ModbusServerService'
 
 const serialService = new SerialService()
 const clientService = new ModbusClientService(serialService)
 const tcpClientService = new TcpClientService()
+const udpClientService = new UdpClientService()
 const serverService = new ModbusServerService()
 
+/**
+ * @brief 按协议分发客户端事务到 TCP/UDP/RTU 服务。
+ *
+ * 集中处理协议路由，避免每个 IPC handler 重复三元判断。
+ * @param params 含 protocol 字段的事务参数。
+ * @param tcp TCP 分支。
+ * @param udp UDP 分支。
+ * @param rtu RTU 分支。
+ * @returns 对应协议事务的结果。
+ */
+function dispatchClient<T>(params: { protocol?: string }, tcp: () => Promise<T>, udp: () => Promise<T>, rtu: () => Promise<T>): Promise<T> {
+  if (params.protocol === 'TCP') return tcp()
+  if (params.protocol === 'UDP') return udp()
+  return rtu()
+}
 /**
  * @brief 返回最近工程记录文件路径。
  *
@@ -127,9 +144,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle('serial:close', () => serialService.close())
   ipcMain.handle('tcp:connect', (_event, config: TcpConfig) => tcpClientService.connect(config))
   ipcMain.handle('tcp:disconnect', () => tcpClientService.disconnect())
-  ipcMain.handle('client:read-registers', (_event, params: ReadRegistersParams) => params.protocol === 'TCP' ? tcpClientService.readRegisters(params) : clientService.readRegisters(params))
-  ipcMain.handle('client:write-single', (_event, params: WriteRegisterParams) => params.protocol === 'TCP' ? tcpClientService.writeSingleRegister(params) : clientService.writeSingleRegister(params))
-  ipcMain.handle('client:write-multiple', (_event, params: WriteMultipleRegistersParams) => params.protocol === 'TCP' ? tcpClientService.writeMultipleRegisters(params) : clientService.writeMultipleRegisters(params))
+  ipcMain.handle('udp:connect', (_event, config: TcpConfig) => udpClientService.connect(config))
+  ipcMain.handle('udp:disconnect', () => udpClientService.disconnect())
+  ipcMain.handle('client:read-registers', (_event, params: ReadRegistersParams) => dispatchClient(params, () => tcpClientService.readRegisters(params), () => udpClientService.readRegisters(params), () => clientService.readRegisters(params)))
+  ipcMain.handle('client:write-single', (_event, params: WriteRegisterParams) => dispatchClient(params, () => tcpClientService.writeSingleRegister(params), () => udpClientService.writeSingleRegister(params), () => clientService.writeSingleRegister(params)))
+  ipcMain.handle('client:write-multiple', (_event, params: WriteMultipleRegistersParams) => dispatchClient(params, () => tcpClientService.writeMultipleRegisters(params), () => udpClientService.writeMultipleRegisters(params), () => clientService.writeMultipleRegisters(params)))
   ipcMain.handle('server:start-instance', (_event, instance: ServerInstanceConfig, data: ServerDataUpdate[]) => serverService.startInstance(instance, data))
   ipcMain.handle('server:stop-instance', (_event, id: string) => serverService.stopInstance(id))
   ipcMain.handle('server:update-instance-data', (_event, id: string, update: ServerDataUpdate) => serverService.updateInstanceData(id, update))
@@ -256,6 +275,7 @@ serverService.on('server-event', (event: ServerEvent) => {
 app.on('window-all-closed', () => {
   void serialService.close()
   void tcpClientService.disconnect()
+  void udpClientService.disconnect()
   void serverService.stopAll()
   if (process.platform !== 'darwin') app.quit()
 })
