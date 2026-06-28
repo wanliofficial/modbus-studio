@@ -97,6 +97,7 @@ button, input { font-family: inherit; }
 .dictionary-toolbar .dictionary-search { width: 240px; }
 .dictionary-form-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .dictionary-form-grid .el-input-number, .dictionary-form-grid .el-select { width: 100%; }
+.form-row-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .toolbar-spacer { flex: 1; }
 .page-table { min-height: 0; flex: 1; padding: 12px; overflow: hidden; }
 .server-workspace .register-panel { padding-top: 5px; }

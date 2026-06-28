@@ -14,6 +14,7 @@ export interface ServerRuntimeInstance {
   tcpHost: string
   tcpPort: number
   protocol: ProtocolMode
+  serial: SerialConfig
   running: boolean
   requestCount: number
   dictionaryRegisters: Record<string, number[]>
@@ -269,6 +270,7 @@ const store = createStore<RootState>({
         tcpHost: instance.tcpHost,
         tcpPort: instance.tcpPort,
         protocol: instance.protocol,
+        serial: { ...state.connection, ...(instance.serial ?? {}) },
         running: false,
         requestCount: legacyData?.requestCount ?? 0,
         dictionaryRegisters: legacyData?.dictionaryRegisters ?? {},
@@ -563,6 +565,7 @@ const store = createStore<RootState>({
         tcpHost: state.server.tcpHost,
         tcpPort: state.server.tcpPort + state.servers.length,
         protocol: state.server.protocol,
+        serial: { ...state.connection },
         running: false,
         requestCount: 0,
         dictionaryRegisters: {},
@@ -589,7 +592,7 @@ const store = createStore<RootState>({
         const values = stored ?? Array.from({ length: Math.max(1, item.length) }, () => 0)
         return values.map((value, index) => ({ area: addressInfo.area, address: addressInfo.protocolAddress + index, value }))
       })
-      await window.modbusApi.server.startInstance({ id: instance.id, name: instance.name, slaveId: instance.slaveId, tcpHost: instance.tcpHost, tcpPort: instance.tcpPort, protocol: instance.protocol, points: instance.points.map((p) => ({ ...p })) }, data)
+      await window.modbusApi.server.startInstance({ id: instance.id, name: instance.name, slaveId: instance.slaveId, tcpHost: instance.tcpHost, tcpPort: instance.tcpPort, protocol: instance.protocol, points: instance.points.map((p) => ({ ...p })), serial: { ...instance.serial } }, data)
       commit('updateServerInstance', { id, patch: { running: true } })
     },
     /**
@@ -665,6 +668,7 @@ const store = createStore<RootState>({
           tcpHost: instance.tcpHost,
           tcpPort: instance.tcpPort,
           protocol: instance.protocol,
+          serial: { ...instance.serial },
           points: instance.points.map((p) => ({ ...p }))
         })),
         clientData: {

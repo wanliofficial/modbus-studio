@@ -7,7 +7,7 @@ import type { PacketLogItem } from '../../shared/types'
 
 const store = useStore<RootState>()
 const filterDirection = ref<'全部' | 'TX' | 'RX'>('全部')
-const filterProtocol = ref<'全部' | 'RTU' | 'TCP'>('全部')
+const filterProtocol = ref<'全部' | 'RTU' | 'TCP' | 'UDP'>('全部')
 const filterAddressRange = ref<'全部' | 'coil' | 'discrete' | 'input' | 'holding'>('全部')
 /** @brief 当前已渲染的条数，滚动接近底部时递增，实现动态加载更多历史。 */
 const renderCount = ref(100)
@@ -112,6 +112,7 @@ async function handleExport(): Promise<void> {
         <el-option label="全部协议" value="全部" />
         <el-option label="RTU" value="RTU" />
         <el-option label="TCP" value="TCP" />
+        <el-option label="UDP" value="UDP" />
       </el-select>
       <el-select v-model="filterAddressRange" style="width: 220px; margin-left: 12px">
         <el-option label="全部地址区" value="全部" />

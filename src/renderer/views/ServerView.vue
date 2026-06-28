@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState, ServerRuntimeInstance } from '../store'
-import type { RegisterDefinition, ServerAreaName } from '../../shared/types'
+import type { RegisterDefinition, ServerAreaName, ProtocolMode, Parity } from '../../shared/types'
 import { decodeRegisterValue, encodeRegisterValue, formatRegisterHex, getDefaultLengthForType, resolveRegisterAddress } from '../utils/register-data'
 
 type EditableField = 'hex' | 'parsed'
@@ -13,7 +13,15 @@ const activeArea = ref<ServerAreaName>('holding')
 const selectedId = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const draftVisible = ref(false)
-const draft = reactive({ name: '', slaveId: 1, tcpHost: '0.0.0.0', tcpPort: 502, protocol: 'TCP' as 'RTU' | 'TCP' })
+const draft = reactive({
+  name: '',
+  slaveId: 1,
+  tcpHost: '0.0.0.0',
+  tcpPort: 502,
+  protocol: 'TCP' as ProtocolMode,
+  serial: { path: 'COM3', baudRate: 9600, dataBits: 8 as 5 | 6 | 7 | 8, stopBits: 1 as 1 | 2, parity: 'none' as Parity, timeout: 1000 }
+})
+const baudRates = [1200, 2400, 4800, 9600, 14400, 19200, 38400, 56000, 57600, 115200, 128000, 230400, 256000, 460800, 921600]
 const pointDialogVisible = ref(false)
 const pointDraft = reactive<RegisterDefinition>(createEmptyPoint())
 const pointEditIndex = ref(-1)
@@ -103,12 +111,20 @@ async function updateBitValue(item: RegisterDefinition, value: string | number |
 
 /* ---- 从站实例管理 ---- */
 function openCreateDialog(): void {
-  Object.assign(draft, { name: `从站 ${store.state.servers.length + 1}`, slaveId: store.state.server.slaveId, tcpHost: store.state.server.tcpHost, tcpPort: store.state.server.tcpPort + store.state.servers.length, protocol: store.state.server.protocol })
+  Object.assign(draft, {
+    name: `从站 ${store.state.servers.length + 1}`,
+    slaveId: store.state.server.slaveId,
+    tcpHost: store.state.server.tcpHost,
+    tcpPort: store.state.server.tcpPort + store.state.servers.length,
+    protocol: store.state.server.protocol,
+    serial: { ...store.state.connection }
+  })
   draftVisible.value = true
 }
 
 function saveInstance(): void {
   if (!draft.name.trim()) { ElMessage.warning('请输入从站名称'); return }
+  if (draft.protocol === 'RTU' && !draft.serial.path.trim()) { ElMessage.warning('请选择串口'); return }
   const id = 'srv-' + Date.now()
   store.commit('addServerInstance', {
     id,
@@ -117,6 +133,7 @@ function saveInstance(): void {
     tcpHost: draft.tcpHost,
     tcpPort: draft.tcpPort,
     protocol: draft.protocol,
+    serial: { ...draft.serial },
     running: false,
     requestCount: 0,
     dictionaryRegisters: {},
@@ -200,6 +217,13 @@ async function handleExportPoints(): Promise<void> {
     ElMessage.error((error as Error).message)
   }
 }
+
+/**
+ * @brief 进入从站页时扫描串口，供新建 RTU 从站下拉选择。
+ */
+onMounted(() => {
+  store.dispatch('refreshPorts').catch((error) => ElMessage.error((error as Error).message))
+})
 </script>
 
 <template>
@@ -220,7 +244,8 @@ async function handleExportPoints(): Promise<void> {
         >
           <div class="server-item-main">
             <strong>{{ instance.name }}</strong>
-            <small>从站 {{ instance.slaveId }} · {{ instance.protocol }} · {{ instance.tcpHost }}:{{ instance.tcpPort }}</small>
+            <small v-if="instance.protocol === 'RTU'">从站 {{ instance.slaveId }} · RTU · {{ instance.serial.path }} @ {{ instance.serial.baudRate }}</small>
+            <small v-else>从站 {{ instance.slaveId }} · {{ instance.protocol }} · {{ instance.tcpHost }}:{{ instance.tcpPort }}</small>
             <div class="server-item-stat">
               <i :class="{ online: instance.running }" />{{ instance.running ? '运行中' : '已停止' }}
               <span>请求 {{ instance.requestCount }}</span>
@@ -239,7 +264,8 @@ async function handleExportPoints(): Promise<void> {
         <template v-else>
           <div class="panel-title">
             <h3>{{ selected.name }} - 数据区</h3>
-            <span>从站地址 {{ selected.slaveId }} · {{ selected.running ? '运行中' : '已停止' }}</span>
+            <span v-if="selected.protocol === 'RTU'">从站 {{ selected.slaveId }} · {{ selected.serial.path }} @ {{ selected.serial.baudRate }} · {{ selected.running ? '运行中' : '已停止' }}</span>
+            <span v-else>从站 {{ selected.slaveId }} · {{ selected.protocol }} · {{ selected.running ? '运行中' : '已停止' }}</span>
           </div>
           <div class="server-point-toolbar">
             <el-button size="small" @click="openCreatePointDialog">新增点</el-button>
@@ -272,13 +298,24 @@ async function handleExportPoints(): Promise<void> {
       </section>
     </section>
 
-    <el-dialog v-model="draftVisible" title="新增从站" width="460px">
+    <el-dialog v-model="draftVisible" title="新增从站" width="480px">
       <el-form label-width="90px">
         <el-form-item label="名称"><el-input v-model="draft.name" /></el-form-item>
-        <el-form-item label="协议"><el-select v-model="draft.protocol"><el-option label="Modbus TCP" value="TCP" /><el-option label="Modbus RTU" value="RTU" /></el-select></el-form-item>
+        <el-form-item label="协议"><el-select v-model="draft.protocol"><el-option label="Modbus TCP" value="TCP" /><el-option label="Modbus UDP" value="UDP" /><el-option label="Modbus RTU" value="RTU" /></el-select></el-form-item>
         <el-form-item label="从站地址"><el-input-number v-model="draft.slaveId" :min="1" :max="247" controls-position="right" /></el-form-item>
-        <el-form-item label="监听地址"><el-input v-model="draft.tcpHost" /></el-form-item>
-        <el-form-item label="监听端口"><el-input-number v-model="draft.tcpPort" :min="1" :max="65535" controls-position="right" /></el-form-item>
+        <template v-if="draft.protocol === 'RTU'">
+          <el-form-item label="串口"><el-select v-model="draft.serial.path"><el-option v-for="port in store.state.ports" :key="port" :label="port" :value="port" /></el-select></el-form-item>
+          <el-form-item label="波特率"><el-select v-model="draft.serial.baudRate"><el-option v-for="value in baudRates" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+          <div class="form-row-grid">
+            <el-form-item label="数据位"><el-select v-model="draft.serial.dataBits"><el-option :value="8" label="8" /></el-select></el-form-item>
+            <el-form-item label="停止位"><el-select v-model="draft.serial.stopBits"><el-option :value="1" label="1" /><el-option :value="2" label="2" /></el-select></el-form-item>
+          </div>
+          <el-form-item label="校验位"><el-select v-model="draft.serial.parity"><el-option label="None" value="none" /><el-option label="Even" value="even" /><el-option label="Odd" value="odd" /></el-select></el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="监听地址"><el-input v-model="draft.tcpHost" /></el-form-item>
+          <el-form-item label="监听端口"><el-input-number v-model="draft.tcpPort" :min="1" :max="65535" controls-position="right" /></el-form-item>
+        </template>
       </el-form>
       <template #footer><el-button @click="draftVisible = false">取消</el-button><el-button type="primary" @click="saveInstance">保存</el-button></template>
     </el-dialog>

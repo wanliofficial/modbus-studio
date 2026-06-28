@@ -1,5 +1,5 @@
 export type Parity = 'none' | 'even' | 'odd'
-export type ProtocolMode = 'RTU' | 'TCP'
+export type ProtocolMode = 'RTU' | 'TCP' | 'UDP'
 
 export interface SerialConfig {
   path: string
@@ -68,6 +68,7 @@ export interface ServerInstanceConfig {
   tcpPort: number
   protocol: ProtocolMode
   points?: RegisterDefinition[]
+  serial?: SerialConfig
 }
 
 export interface ServerDataUpdate {
@@ -89,7 +90,7 @@ export interface PacketLogItem {
   id: number
   time: string
   direction: 'TX' | 'RX'
-  protocol: 'RTU' | 'TCP'
+  protocol: ProtocolMode
   raw: string
   parsed: string
   elapsedMs: number
