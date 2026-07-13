@@ -4,7 +4,7 @@ import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState } from '../store'
 import type { RegisterDefinition } from '../../shared/types'
-import { getDefaultLengthForType } from '../utils/register-data'
+import { formatAddressHex, getDefaultLengthForType, parseHexAddress } from '../utils/register-data'
 
 const store = useStore<RootState>()
 const dialogVisible = ref(false)
@@ -15,7 +15,12 @@ const draft = reactive<RegisterDefinition>(createEmptyItem())
 const filteredDictionary = computed(() => {
   const keyword = searchText.value.trim().toLowerCase()
   if (!keyword) return store.state.dictionary.map((item, index) => ({ item, index }))
-  return store.state.dictionary.map((item, index) => ({ item, index })).filter(({ item }) => [item.group, item.name, String(item.address), item.dataType, item.unit, item.remark].some((value) => String(value).toLowerCase().includes(keyword)))
+  return store.state.dictionary.map((item, index) => ({ item, index })).filter(({ item }) => [item.group, item.name, formatAddressHex(item.address), item.dataType, item.unit, item.remark].some((value) => String(value).toLowerCase().includes(keyword)))
+})
+
+const draftAddressHex = computed({
+  get: () => formatAddressHex(draft.address),
+  set: (val: string) => { const parsed = parseHexAddress(val); if (!Number.isNaN(parsed)) draft.address = parsed }
 })
 
 function createEmptyItem(): RegisterDefinition {
@@ -97,10 +102,10 @@ function handleMoveDown(index: number): void {
         <template #title>
           <span style="font-size: 13px; line-height: 1.8;">
             <b>地址区段说明：</b>
-            00000 ~ 09999 = <b>线圈 读(01) 写(05/15)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            10000 ~ 19999 = <b>离散输入 读(02)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            30000 ~ 39999 = <b>输入寄存器 读(04)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            40000 ~ 49999 = <b>保持寄存器 读(03) 写(06/16)</b>
+            0x00000 ~ 0x0270F = <b>线圈 读(01) 写(05/15)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            0x10000 ~ 0x1270F = <b>离散输入 读(02)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            0x30000 ~ 0x3270F = <b>输入寄存器 读(04)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            0x40000 ~ 0x4270F = <b>保持寄存器 读(03) 写(06/16)</b>
           </span>
         </template>
       </el-alert>
@@ -110,7 +115,7 @@ function handleMoveDown(index: number): void {
       <div class="panel-title"><h3>寄存器字典</h3><span>显示 {{ filteredDictionary.length }} / {{ store.state.dictionary.length }} 个点位</span></div>
       <el-table :data="filteredDictionary" height="100%" stripe>
         <el-table-column label="分组" min-width="120"><template #default="scope">{{ scope.row.item.group }}</template></el-table-column>
-        <el-table-column label="地址" width="100"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
+        <el-table-column label="地址" width="110"><template #default="scope">{{ formatAddressHex(scope.row.item.address) }}</template></el-table-column>
         <el-table-column label="从站" width="80"><template #default="scope">{{ scope.row.item.slaveId ? scope.row.item.slaveId : '全局' }}</template></el-table-column>
         <el-table-column label="名称" min-width="130"><template #default="scope">{{ scope.row.item.name }}</template></el-table-column>
         <el-table-column label="数据类型" min-width="120"><template #default="scope">{{ scope.row.item.dataType }}</template></el-table-column>
@@ -137,7 +142,7 @@ function handleMoveDown(index: number): void {
         <div class="dictionary-form-grid">
           <el-form-item label="分组"><el-input v-model="draft.group" placeholder="例如：温度传感器" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="draft.name" placeholder="请输入寄存器名称" /></el-form-item>
-          <el-form-item label="地址"><el-input-number v-model="draft.address" :min="0" :max="65535" controls-position="right" /></el-form-item>
+          <el-form-item label="地址"><el-input v-model="draftAddressHex" placeholder="例如 0x40000" /></el-form-item>
           <el-form-item label="从站地址"><el-input-number v-model="draft.slaveId" :min="0" :max="247" controls-position="right" /></el-form-item>
           <div class="form-tip" style="grid-column: 1 / -1; font-size: 11px; color: #7b8798; margin-top: -4px;">设为 0 表示跟随客户端全局从站地址</div>
           <el-form-item label="数据类型"><el-select v-model="draft.dataType" @change="onDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>

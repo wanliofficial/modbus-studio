@@ -4,7 +4,7 @@ import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState, ServerRuntimeInstance } from '../store'
 import type { RegisterDefinition, ServerAreaName, ProtocolMode, Parity } from '../../shared/types'
-import { decodeRegisterValue, encodeRegisterValue, formatRegisterHex, getDefaultLengthForType, resolveRegisterAddress } from '../utils/register-data'
+import { decodeRegisterValue, encodeRegisterValue, formatAddressHex, formatRegisterHex, getDefaultLengthForType, parseHexAddress, resolveRegisterAddress } from '../utils/register-data'
 
 type EditableField = 'hex' | 'parsed'
 
@@ -27,6 +27,10 @@ const baudRates = [1200, 2400, 4800, 9600, 14400, 19200, 38400, 56000, 57600, 11
 const pointDialogVisible = ref(false)
 const pointDraft = reactive<RegisterDefinition>(createEmptyPoint())
 const pointEditIndex = ref(-1)
+const pointAddressHex = computed({
+  get: () => formatAddressHex(pointDraft.address),
+  set: (val: string) => { const parsed = parseHexAddress(val); if (!Number.isNaN(parsed)) pointDraft.address = parsed }
+})
 
 function createEmptyPoint(): RegisterDefinition {
   return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'RW', factor: 1, unit: '无', remark: '' }
@@ -311,7 +315,7 @@ onMounted(() => {
             <el-tab-pane label="保持寄存器 (4xxxx)" name="holding" />
           </el-tabs>
           <el-table :data="activeRows" height="calc(100% - 145px)" stripe empty-text="该数据区暂无点，请点击「新增点」">
-            <el-table-column label="地址" width="100"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
+            <el-table-column label="地址" width="110"><template #default="scope">{{ formatAddressHex(scope.row.item.address) }}</template></el-table-column>
             <el-table-column label="名称" min-width="150"><template #default="scope"><strong>{{ scope.row.item.name }}</strong><small class="cell-meta">{{ scope.row.item.dataType }} / 长度 {{ scope.row.item.length }}</small></template></el-table-column>
             <el-table-column v-if="isBitArea" label="当前状态" min-width="150"><template #default="scope"><el-switch :model-value="Boolean(scope.row.values[0])" @change="updateBitValue(scope.row.item, $event)" /></template></el-table-column>
             <el-table-column v-if="!isBitArea" label="原始值 HEX" min-width="190"><template #default="scope"><el-input :model-value="getCellValue(scope.row, 'hex')" size="small" @update:model-value="updateCellValue(scope.row.item, 'hex', $event)" @change="commitCell(scope.row.item, 'hex')" /></template></el-table-column>
@@ -357,7 +361,7 @@ onMounted(() => {
         <div class="dictionary-form-grid">
           <el-form-item label="分组"><el-input v-model="pointDraft.group" placeholder="例如：温度传感器" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="pointDraft.name" placeholder="请输入点名称" /></el-form-item>
-          <el-form-item label="地址"><el-input-number v-model="pointDraft.address" :min="0" :max="65535" controls-position="right" /></el-form-item>
+          <el-form-item label="地址"><el-input v-model="pointAddressHex" placeholder="例如 0x40000" /></el-form-item>
           <el-form-item label="数据类型"><el-select v-model="pointDraft.dataType" @change="onPointDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>
           <el-form-item label="长度"><el-input-number v-model="pointDraft.length" :min="1" :max="125" controls-position="right" /></el-form-item>
           <el-form-item label="读写权限"><el-select v-model="pointDraft.access"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></el-form-item>

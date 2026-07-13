@@ -4,7 +4,7 @@ import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState } from '../store'
 import type { RegisterDefinition } from '../../shared/types'
-import { decodeRegisterValue, encodeRegisterValue, formatRegisterHex, resolveRegisterAddress } from '../utils/register-data'
+import { decodeRegisterValue, encodeRegisterValue, formatAddressHex, formatRegisterHex, resolveRegisterAddress } from '../utils/register-data'
 import ConnectionPanel from '../components/ConnectionPanel.vue'
 
 type EditableField = 'hex' | 'parsed'
@@ -226,7 +226,7 @@ onBeforeUnmount(() => { dragging = false })
           <button v-for="group in groups" :key="group" class="group-tab" :class="{ active: activeGroup === group }" @click="activeGroup = group">{{ group }}</button>
         </div>
         <el-table :data="rows" height="100%" stripe empty-text="寄存器字典为空，请先添加字典条目" :row-class-name="getRowClass">
-          <el-table-column label="地址" width="90"><template #default="scope">{{ scope.row.item.address }}</template></el-table-column>
+          <el-table-column label="地址" width="100"><template #default="scope">{{ formatAddressHex(scope.row.item.address) }}</template></el-table-column>
           <el-table-column label="名称" min-width="150"><template #default="scope"><strong>{{ scope.row.item.name }}</strong><small class="cell-meta">{{ scope.row.item.dataType }} / 长度 {{ scope.row.item.length }}</small></template></el-table-column>
           <el-table-column label="原始值 / 状态" min-width="190">
             <template #default="scope">
