@@ -1,7 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
-import * as iconv from 'iconv-lite'
 import type { PacketLogItem, ProjectData, ReadRegistersParams, RecentProject, RegisterDefinition, SerialConfig, ServerConfig, ServerDataUpdate, ServerEvent, ServerInstanceConfig, TcpConfig, WriteMultipleRegistersParams, WriteRegisterParams } from '../shared/types'
 
 /**
@@ -97,9 +96,9 @@ async function addRecentProject(path: string, name: string): Promise<RecentProje
  * @returns 解码后的文本。
  */
 function decodeCsvBuffer(buffer: Buffer): string {
-  const utf8 = iconv.decode(buffer, 'utf8')
-  if (!utf8.includes('\uFFFD')) return utf8
-  return iconv.decode(buffer, 'gbk')
+  const text = buffer.toString('utf8')
+  if (!text.includes('\uFFFD')) return text
+  return buffer.toString('latin1')
 }
 
 /**
