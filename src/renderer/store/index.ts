@@ -94,22 +94,18 @@ interface ReadGroup {
   items: { item: RegisterDefinition; offset: number }[]
 }
 
-/** @brief 地址范围 → 功能码映射表。 */
-const ADDRESS_FC_MAP: { min: number; max: number; functionCode: 1 | 2 | 3 | 4; baseAddress: number }[] = [
-  { min: 0, max: 9999, functionCode: 1, baseAddress: 0 },
-  { min: 10000, max: 19999, functionCode: 2, baseAddress: 10000 },
-  { min: 30000, max: 39999, functionCode: 4, baseAddress: 30000 },
-  { min: 40000, max: 49999, functionCode: 3, baseAddress: 40000 }
-]
+/** @brief 数据区编号 → 功能码映射。1=线圈 2=离散 3=输入寄存器 4=保持寄存器。 */
+const AREA_FC_MAP: Record<number, 1 | 2 | 3 | 4> = { 1: 1, 2: 2, 3: 4, 4: 3 }
 
 /**
  * @brief 获取地址对应的功能码和协议地址。
+ *
+ * 地址按 0x10000 划分为四区，低 16 位为协议地址。
  */
 function getAddressInfo(address: number): { functionCode: 1 | 2 | 3 | 4; protocolAddress: number } | null {
-  for (const entry of ADDRESS_FC_MAP) {
-    if (address >= entry.min && address <= entry.max) return { functionCode: entry.functionCode, protocolAddress: address - entry.baseAddress }
-  }
-  return null
+  const area = Math.floor(address / 0x10000)
+  if (area < 1 || area > 4) return null
+  return { functionCode: AREA_FC_MAP[area], protocolAddress: address & 0xffff }
 }
 
 /**

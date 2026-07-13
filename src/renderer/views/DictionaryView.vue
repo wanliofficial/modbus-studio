@@ -24,7 +24,7 @@ const draftAddressHex = computed({
 })
 
 function createEmptyItem(): RegisterDefinition {
-  return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'R', factor: 1, unit: '无', remark: '', slaveId: undefined }
+  return { group: '默认分组', address: 0x40000, name: '', dataType: 'UINT16', length: 1, access: 'R', factor: 1, unit: '无', remark: '', slaveId: undefined }
 }
 
 function openCreateDialog(): void {
@@ -102,10 +102,10 @@ function handleMoveDown(index: number): void {
         <template #title>
           <span style="font-size: 13px; line-height: 1.8;">
             <b>地址区段说明：</b>
-            0x00000 ~ 0x0270F = <b>线圈 读(01) 写(05/15)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            0x10000 ~ 0x1270F = <b>离散输入 读(02)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            0x30000 ~ 0x3270F = <b>输入寄存器 读(04)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
-            0x40000 ~ 0x4270F = <b>保持寄存器 读(03) 写(06/16)</b>
+            10000 ~ 1FFFF = <b>线圈 读(01) 写(05/15)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            20000 ~ 2FFFF = <b>离散输入 读(02)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            30000 ~ 3FFFF = <b>输入寄存器 读(04)</b>&nbsp;&nbsp;|&nbsp;&nbsp;
+            40000 ~ 4FFFF = <b>保持寄存器 读(03) 写(06/16)</b>
           </span>
         </template>
       </el-alert>
@@ -142,9 +142,8 @@ function handleMoveDown(index: number): void {
         <div class="dictionary-form-grid">
           <el-form-item label="分组"><el-input v-model="draft.group" placeholder="例如：温度传感器" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="draft.name" placeholder="请输入寄存器名称" /></el-form-item>
-          <el-form-item label="地址"><el-input v-model="draftAddressHex" placeholder="例如 0x40000" /></el-form-item>
+          <el-form-item label="地址"><el-input v-model="draftAddressHex" placeholder="例如 40010" /></el-form-item>
           <el-form-item label="从站地址"><el-input-number v-model="draft.slaveId" :min="0" :max="247" controls-position="right" /></el-form-item>
-          <div class="form-tip" style="grid-column: 1 / -1; font-size: 11px; color: #7b8798; margin-top: -4px;">设为 0 表示跟随客户端全局从站地址</div>
           <el-form-item label="数据类型"><el-select v-model="draft.dataType" @change="onDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>
           <el-form-item label="长度"><el-input-number v-model="draft.length" :min="1" :max="125" controls-position="right" /></el-form-item>
           <el-form-item label="读写权限"><el-select v-model="draft.access"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></el-form-item>
@@ -155,5 +154,16 @@ function handleMoveDown(index: number): void {
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="saveItem">保存</el-button></template>
     </el-dialog>
+
+    <section class="panel" style="margin-top: 12px;">
+      <el-alert type="info" :closable="false" show-icon>
+        <template #title>
+          <span style="font-size: 12px; line-height: 1.8;">
+            <b>地址格式：</b>首位 1=线圈 / 2=离散输入 / 3=输入寄存器 / 4=保持寄存器，后四位为协议地址（十六进制，0000～FFFF）。
+            例：<b>40010</b> 表示保持寄存器协议地址 0x0010。
+          </span>
+        </template>
+      </el-alert>
+    </section>
   </div>
 </template>

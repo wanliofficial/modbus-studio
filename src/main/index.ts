@@ -3,6 +3,24 @@ import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import * as iconv from 'iconv-lite'
 import type { PacketLogItem, ProjectData, ReadRegistersParams, RecentProject, RegisterDefinition, SerialConfig, ServerConfig, ServerDataUpdate, ServerEvent, ServerInstanceConfig, TcpConfig, WriteMultipleRegistersParams, WriteRegisterParams } from '../shared/types'
+
+/**
+ * @brief 解析显示地址字符串为内部数值。
+ *
+ * 格式：首位 1-4（区号）+ 四位 hex 协议地址。兼容 0x 前缀和纯十进制。
+ * @param text 地址文本。
+ * @returns 内部数值地址，无效时返回 0x40000。
+ */
+function parseAddress(text: string): number {
+  const trimmed = text.trim()
+  if (/^[1-4][0-9a-fA-F]{4}$/.test(trimmed)) {
+    const area = Number(trimmed[0])
+    const protocol = Number.parseInt(trimmed.slice(1), 16)
+    if (!Number.isNaN(protocol)) return area * 0x10000 + protocol
+  }
+  if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) return Number.parseInt(trimmed.slice(2), 16) || 0x40000
+  return Number(trimmed) || 0x40000
+}
 import { SerialService } from './services/SerialService'
 import { ModbusClientService } from './services/ModbusClientService'
 import { TcpClientService } from './services/TcpClientService'
@@ -196,8 +214,17 @@ function registerIpcHandlers(): void {
     if (selected.canceled || !selected.filePath) return null
     const isCsv = selected.filePath.endsWith('.csv')
     const content = isCsv
-      ? '﻿分组,地址,名称,数据类型,长度,从站,读写,比例因子,单位,备注\n' + items.map((item) => `"${item.group}","${item.address}","${item.name}","${item.dataType}","${item.length}","${item.slaveId ?? 0}","${item.access}","${item.factor}","${item.unit}","${item.remark}"`).join('\n')
-      : JSON.stringify(items, null, 2)
+      ? '﻿分组,地址,名称,数据类型,长度,从站,读写,比例因子,单位,备注\n' + items.map((item) => {
+          const area = Math.floor(item.address / 0x10000)
+          const protocol = item.address & 0xffff
+          const display = `${area}${protocol.toString(16).toUpperCase().padStart(4, '0')}`
+          return `"${item.group}","${display}","${item.name}","${item.dataType}","${item.length}","${item.slaveId ?? 0}","${item.access}","${item.factor}","${item.unit}","${item.remark}"`
+        }).join('\n')
+      : JSON.stringify(items.map((item) => {
+          const area = Math.floor(item.address / 0x10000)
+          const protocol = item.address & 0xffff
+          return { ...item, address: `${area}${protocol.toString(16).toUpperCase().padStart(4, '0')}` }
+        }), null, 2)
     await writeFile(selected.filePath, content, 'utf8')
     return selected.filePath
   })
@@ -227,7 +254,7 @@ function registerIpcHandlers(): void {
         const slaveRaw = hasSlaveColumn ? Number(val(5)) : 0
         return {
           group: val(0) || '默认分组',
-          address: Number(val(1)) || 40001,
+          address: parseAddress(val(1)),
           name: val(2) || '',
           dataType: val(3) || 'UINT16',
           length: Number(val(4)) || 1,
@@ -240,7 +267,8 @@ function registerIpcHandlers(): void {
       })
     }
     const content = await readFile(filePath, 'utf8')
-    return JSON.parse(content) as RegisterDefinition[]
+    const raw = JSON.parse(content) as RegisterDefinition[]
+    return raw.map((item) => ({ ...item, address: typeof item.address === 'string' ? parseAddress(item.address) : item.address }))
   })
   ipcMain.handle('log:export', async (_event, items: PacketLogItem[]) => {
     const selected = await dialog.showSaveDialog({

@@ -33,7 +33,7 @@ const pointAddressHex = computed({
 })
 
 function createEmptyPoint(): RegisterDefinition {
-  return { group: '默认分组', address: 40001, name: '', dataType: 'UINT16', length: 1, access: 'RW', factor: 1, unit: '无', remark: '' }
+  return { group: '默认分组', address: 0x40000, name: '', dataType: 'UINT16', length: 1, access: 'RW', factor: 1, unit: '无', remark: '' }
 }
 
 const selected = computed<ServerRuntimeInstance | null>(() => {
@@ -361,7 +361,7 @@ onMounted(() => {
         <div class="dictionary-form-grid">
           <el-form-item label="分组"><el-input v-model="pointDraft.group" placeholder="例如：温度传感器" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="pointDraft.name" placeholder="请输入点名称" /></el-form-item>
-          <el-form-item label="地址"><el-input v-model="pointAddressHex" placeholder="例如 0x40000" /></el-form-item>
+          <el-form-item label="地址"><el-input v-model="pointAddressHex" placeholder="例如 40010" /></el-form-item>
           <el-form-item label="数据类型"><el-select v-model="pointDraft.dataType" @change="onPointDataTypeChange"><el-option v-for="type in ['UINT16','INT16','UINT32','INT32','FLOAT_ABCD','FLOAT_CDAB','FLOAT_BADC','FLOAT_DCBA','BCD','BIT']" :key="type" :label="type" :value="type" /></el-select></el-form-item>
           <el-form-item label="长度"><el-input-number v-model="pointDraft.length" :min="1" :max="125" controls-position="right" /></el-form-item>
           <el-form-item label="读写权限"><el-select v-model="pointDraft.access"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></el-form-item>

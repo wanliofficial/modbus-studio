@@ -4,7 +4,7 @@ import { useStore } from 'vuex'
 import { ElMessage } from 'element-plus'
 import type { RootState } from '../store'
 import type { RegisterDefinition } from '../../shared/types'
-import { decodeRegisterValue, encodeRegisterValue, formatAddressHex, formatRegisterHex, resolveRegisterAddress } from '../utils/register-data'
+import { decodeRegisterValue, encodeRegisterValue, formatAddressHex, formatRegisterHex, getAddressArea, resolveRegisterAddress } from '../utils/register-data'
 import ConnectionPanel from '../components/ConnectionPanel.vue'
 
 type EditableField = 'hex' | 'parsed'
@@ -67,15 +67,12 @@ const rows = computed(() => {
  * @param address 显示地址。
  */
 function isBitItem(address: number): boolean {
-  return (address >= 0 && address <= 9999) || (address >= 10000 && address <= 19999)
+  const a = getAddressArea(address)
+  return a === 1 || a === 2
 }
 
-/**
- * @brief 判断字典条目是否为线圈区（可写位区）。
- * @param address 显示地址。
- */
 function isCoilAddress(address: number): boolean {
-  return address >= 0 && address <= 9999
+  return getAddressArea(address) === 1
 }
 
 /**
@@ -156,7 +153,7 @@ async function commitCell(item: RegisterDefinition, field: EditableField): Promi
  * @brief 判断寄存器条目是否可写（保持寄存器区，access W/RW）。
  */
 function isRegisterEditable(item: RegisterDefinition): boolean {
-  return item.access !== 'R' && item.address >= 40000 && item.address <= 49999
+  return item.access !== 'R' && getAddressArea(item.address) === 4
 }
 
 /**

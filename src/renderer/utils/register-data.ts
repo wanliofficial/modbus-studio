@@ -1,26 +1,44 @@
 import type { RegisterDefinition, ServerAreaName } from '../../shared/types'
 
 /**
- * @brief 将数值地址格式化为十六进制显示文本。
+ * @brief 将数值地址格式化为显示文本。
+ *
+ * 格式：首位 1-4 表示数据区（1=线圈 2=离散 3=输入 4=保持），后四位为协议地址十六进制。
  * @param address 数值地址。
- * @returns 带 0x 前缀的四位大写十六进制字符串。
+ * @returns 地址显示文本，例如 40000 表示保持寄存器协议地址 0x0000。
  */
 export function formatAddressHex(address: number): string {
-  return `0x${address.toString(16).toUpperCase().padStart(4, '0')}`
+  const area = Math.floor(address / 0x10000)
+  const protocol = address & 0xffff
+  return `${area}${protocol.toString(16).toUpperCase().padStart(4, '0')}`
 }
 
 /**
- * @brief 解析十六进制地址字符串为数值。
+ * @brief 解析显示地址字符串为数值。
  *
- * 支持 0x 前缀和纯十六进制，也兼容十进制数字。
+ * 支持 5 位 hex 地址（首数字 1-4 为区，后四位为协议地址）；也兼容 0x 前缀和纯十进制。
  * @param text 地址文本。
  * @returns 解析后的数值，无效时返回 NaN。
  */
 export function parseHexAddress(text: string): number {
   const trimmed = text.trim()
+  if (/^[1-4][0-9a-fA-F]{4}$/.test(trimmed)) {
+    const area = Number(trimmed[0])
+    const protocol = Number.parseInt(trimmed.slice(1), 16)
+    if (!Number.isNaN(protocol)) return area * 0x10000 + protocol
+  }
   if (/^0x[0-9a-fA-F]+$/.test(trimmed)) return Number.parseInt(trimmed.slice(2), 16)
   if (/^[0-9a-fA-F]+$/.test(trimmed)) return Number.parseInt(trimmed, 16)
   return Number(trimmed)
+}
+
+/**
+ * @brief 获取地址对应的数据区编号。
+ * @param address 数值地址。
+ * @returns 1-4 或 0（无效）。
+ */
+export function getAddressArea(address: number): number {
+  return Math.floor(address / 0x10000)
 }
 
 export interface RegisterAddressInfo {
@@ -58,10 +76,12 @@ export function getDefaultLengthForType(dataType: string): number {
  * @returns 地址有效时返回数据区信息，否则返回 null。
  */
 export function resolveRegisterAddress(address: number): RegisterAddressInfo | null {
-  if (address >= 0 && address <= 9999) return { area: 'coil', protocolAddress: address }
-  if (address >= 10000 && address <= 19999) return { area: 'discrete', protocolAddress: address - 10000 }
-  if (address >= 30000 && address <= 39999) return { area: 'input', protocolAddress: address - 30000 }
-  if (address >= 40000 && address <= 49999) return { area: 'holding', protocolAddress: address - 40000 }
+  const area = Math.floor(address / 0x10000)
+  const protocol = address & 0xffff
+  if (area === 1) return { area: 'coil', protocolAddress: protocol }
+  if (area === 2) return { area: 'discrete', protocolAddress: protocol }
+  if (area === 3) return { area: 'input', protocolAddress: protocol }
+  if (area === 4) return { area: 'holding', protocolAddress: protocol }
   return null
 }
 
