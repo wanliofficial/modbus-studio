@@ -16,8 +16,13 @@ export class ModbusClientService {
     const request = buildReadFrame(params.slaveId, params.functionCode, params.startAddress, params.quantity)
     const startedAt = performance.now()
     const response = await this.serial.transact(request, params.timeout)
-    const registers = parseReadResponse(response, params.slaveId, params.functionCode, params.quantity)
-    return { tx: frameToHex(request), rx: frameToHex(response), registers, elapsedMs: Math.max(1, Math.round(performance.now() - startedAt)), crcValid: true }
+    const txHex = frameToHex(request)
+    try {
+      const registers = parseReadResponse(response, params.slaveId, params.functionCode, params.quantity)
+      return { tx: txHex, rx: frameToHex(response), registers, elapsedMs: Math.max(1, Math.round(performance.now() - startedAt)), crcValid: true }
+    } catch (error) {
+      throw new Error(`TX ${txHex} | ${(error as Error).message}`)
+    }
   }
 
   /**

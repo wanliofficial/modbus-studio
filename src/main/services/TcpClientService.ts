@@ -51,7 +51,12 @@ export class TcpClientService {
     const request = buildTcpReadFrame(transactionId, params.slaveId, params.functionCode, params.startAddress, params.quantity)
     const startedAt = performance.now()
     const response = await this.transact(request, params.timeout)
-    return { tx: frameToHex(request), rx: frameToHex(response), registers: parseTcpReadResponse(response, transactionId, params.slaveId, params.functionCode, params.quantity), elapsedMs: Math.max(1, Math.round(performance.now() - startedAt)), crcValid: true }
+    const txHex = frameToHex(request)
+    try {
+      return { tx: txHex, rx: frameToHex(response), registers: parseTcpReadResponse(response, transactionId, params.slaveId, params.functionCode, params.quantity), elapsedMs: Math.max(1, Math.round(performance.now() - startedAt)), crcValid: true }
+    } catch (error) {
+      throw new Error(`TX ${txHex} | ${(error as Error).message}`)
+    }
   }
 
   /**
