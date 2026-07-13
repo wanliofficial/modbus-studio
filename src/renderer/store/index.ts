@@ -72,6 +72,12 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 let pollPromise: Promise<void> | null = null
 let lastPollError = ''
 
+/** @brief 从 Modbus 错误消息中提取原始报文十六进制。 */
+function extractRawHex(message: string): string {
+  const match = message.match(/\[([0-9A-Fa-f ]+)\]/)
+  return match ? match[1] : '-'
+}
+
 /**
  * @brief 生成默认寄存器字典。
  *
@@ -371,7 +377,7 @@ const store = createStore<RootState>({
         } catch (error) {
           const message = (error as Error).message
           const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-          commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `轮询异常：${message}`, elapsedMs: 0, status: '失败' })
+          commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: extractRawHex(message), parsed: `轮询异常：${message.replace(/\s*\[.+\]\s*/, '')}`, elapsedMs: 0, status: '失败' })
           if (message !== lastPollError) {
             const { ElMessage } = await import('element-plus')
             ElMessage.error(`字典轮询失败：${message}`)
@@ -498,7 +504,8 @@ const store = createStore<RootState>({
               }
             } catch (error) {
               const message = (error as Error).message
-              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `合并读取失败：${message}`, elapsedMs: 0, status: '失败' })
+              commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: '-', parsed: `合并读取 FC${fc}，从站 ${sid}，起始地址 ${group.startAddress}，数量 ${group.quantity}`, elapsedMs: 0, status: '发送' })
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: extractRawHex(message), parsed: `合并读取失败：${message.replace(/\s*\[.+\]\s*/, '')}`, elapsedMs: 0, status: '失败' })
               for (const { item } of group.items) commit('setDictionaryError', { key: String(item.address), error: message })
             }
           }
@@ -522,7 +529,8 @@ const store = createStore<RootState>({
               commit('setDictionaryError', { key: String(item.address), error: '' })
             } catch (error) {
               const message = (error as Error).message
-              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: '-', parsed: `${item.name} 读取失败：${message}`, elapsedMs: 0, status: '失败' })
+              commit('addLog', { time, direction: 'TX', protocol: state.protocol, raw: '-', parsed: `字典读取 ${item.name}，从站 ${sid}，地址 ${item.address}，长度 ${item.length}`, elapsedMs: 0, status: '发送' })
+              commit('addLog', { time, direction: 'RX', protocol: state.protocol, raw: extractRawHex(message), parsed: `${item.name} 读取失败：${message.replace(/\s*\[.+\]\s*/, '')}`, elapsedMs: 0, status: '失败' })
               commit('setDictionaryError', { key: String(item.address), error: message })
             }
           }
