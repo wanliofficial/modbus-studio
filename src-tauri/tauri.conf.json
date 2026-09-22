@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Modbus Studio",
+  "version": "1.6.0",
+  "identifier": "com.yunding.modbusstudio",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Modbus Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "resizable": true,
+        "decorations": false,
+        "center": true,
+        "backgroundColor": "#f3f6fb"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}
