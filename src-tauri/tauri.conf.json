@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Modbus Studio",
-  "version": "1.6.0",
-  "identifier": "com.yunding.modbusstudio",
+  "productName": "ModbusStudio",
+  "version": "2.0.0",
+  "identifier": "com.wanli.modbusstudio",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
