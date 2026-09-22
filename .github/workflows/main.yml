@@ -71,4 +71,13 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
+          uploadWorkflowArtifacts: false
           args: ${{ matrix.args }}
+
+      - name: Upload Linux packages
+        if: startsWith(matrix.platform, 'ubuntu')
+        uses: actions/upload-artifact@v4
+        with:
+          name: modbus-studio-${{ matrix.platform }}
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: error
